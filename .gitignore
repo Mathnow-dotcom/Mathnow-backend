@@ -1,0 +1,49 @@
+# ===== Build output =====
+build/
+.gradle/
+*.class
+bin/
+
+# ===== IDE / OS =====
+.DS_Store
+**/.DS_Store
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# ===== JAR backups (never commit; regenerate via `./gradlew bootJar`) =====
+application.jar
+application.jar.*
+application.jar_*
+
+# ===== Codebase snapshots / consolidated dumps (use git history instead) =====
+code-all*.txt
+project_consolidated_server.txt
+
+# ===== Logs =====
+*.log
+Java_output.txt
+Node_output.txt
+full_run_*.log
+
+# ===== Local dev / scratch state =====
+backups/
+baselines/
+java_results/
+diffs/
+tmp/
+src.zip
+backend*.zip
+updated-config.json
+
+# ===== Local config overrides (NEVER commit secrets) =====
+application-local.properties
+*-local.properties
+.env
+*.env
+
+# ===== Workspace-private (Conductor / Claude) =====
+.context/
+.claude/
+.elasticbeanstalk/
