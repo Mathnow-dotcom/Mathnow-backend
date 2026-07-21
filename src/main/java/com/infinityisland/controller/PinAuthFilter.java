@@ -45,6 +45,13 @@ public class PinAuthFilter implements ContainerRequestFilter {
 
   @Override
   public void filter(ContainerRequestContext ctx) throws IOException {
+    // ------------------------------------------------------------------
+    // ADDED: Bypass authentication for CORS preflight (OPTIONS) requests
+    // ------------------------------------------------------------------
+    if ("OPTIONS".equalsIgnoreCase(ctx.getMethod())) {
+        return; 
+    }
+
     String path = "/" + ctx.getUriInfo().getPath();
     log.debug("[DEBUG] Filter path: {}", path);
     String pin = ctx.getHeaderString("x-pin");
