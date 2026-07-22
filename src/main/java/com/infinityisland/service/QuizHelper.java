@@ -36,7 +36,8 @@ import static com.infinityisland.service.QuizUtils.*;
  * timer management, run lookups, and quiz summary construction.
  */
 @Service
-@DependsOn({"divisionCatalogSeeder", "multiplicationCatalogSeeder", "multiplicationProgressResetMigration"})
+@DependsOn({"additionCatalogSeeder", "subtractionCatalogSeeder", "divisionCatalogSeeder",
+        "multiplicationCatalogSeeder", "multiplicationProgressResetMigration"})
 public class QuizHelper {
 
     private static final Logger log = LoggerFactory.getLogger(QuizHelper.class);
