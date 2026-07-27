@@ -4,8 +4,10 @@
 // ============================================================================
 package com.infinityisland.controller;
 
+import com.infinityisland.dao.Attempt;
 import com.infinityisland.dao.DailySummary;
 import com.infinityisland.dao.user.User;
+import com.infinityisland.repositories.AttemptRepository;
 import com.infinityisland.repositories.DailySummaryRepository;
 import com.infinityisland.repositories.UserRepository;
 import com.infinityisland.service.GameConfigService;
@@ -17,17 +19,26 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.io.BufferedWriter;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Component
 @Path("/admin")
 @Produces(MediaType.APPLICATION_JSON)
 public class AdminResource {
     private static final Logger log = LoggerFactory.getLogger(AdminResource.class);
+    private static final DateTimeFormatter CSV_DATE_FORMATTER =
+            DateTimeFormatter.ISO_OFFSET_DATE_TIME.withZone(ZoneOffset.UTC);
+
     private final DailySummaryRepository daily;
 
     @Autowired
@@ -41,6 +52,9 @@ public class AdminResource {
 
     @Autowired
     UserService userService;
+
+    @Autowired
+    AttemptRepository attemptRepo;
 
     public AdminResource(DailySummaryRepository daily) {
         this.daily = daily;
@@ -97,6 +111,69 @@ public class AdminResource {
         } else {
             return Response.status(404).entity(result).build();
         }
+    }
+
+    @GET
+    @Path("/users/{userId}/attempts/export")
+    @Produces("text/csv")
+    public Response exportUserAttempts(
+            @HeaderParam("x-pin") String adminPin,
+            @PathParam("userId") String userId,
+            @QueryParam("question") String question) {
+
+        if (!gameConfigService.isValidAdminPin(adminPin)) {
+            return Response.status(401)
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(Map.of("error", "Unauthorized: Invalid Admin PIN"))
+                    .build();
+        }
+
+        if (userId == null || userId.isBlank()) {
+            return Response.status(400)
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(Map.of("error", "userId is required"))
+                    .build();
+        }
+
+        String requestedStudentId = userId.trim();
+        String resolvedUserId = resolveExistingUserId(requestedStudentId);
+        if (resolvedUserId == null) {
+            return Response.status(404)
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(Map.of("error", "Student not found"))
+                    .build();
+        }
+
+        String requestedQuestion = question != null && !question.isBlank() ? question : null;
+        String filename = buildAttemptsExportFilename(requestedStudentId, requestedQuestion);
+
+        StreamingOutput stream = output -> {
+            try (BufferedWriter writer = new BufferedWriter(
+                     new OutputStreamWriter(output, StandardCharsets.UTF_8));
+                 Stream<Attempt> attempts = requestedQuestion != null
+                         ? attemptRepo.streamByUserIdAndQuestionOrderByAttemptedAtDesc(resolvedUserId, requestedQuestion)
+                         : attemptRepo.streamByUserIdOrderByAttemptedAtDesc(resolvedUserId)) {
+
+                writer.write("Date,Operation,Game Mode,Belt/Degree,Question,User Answer,Correct Answer,Is Correct,Response Time (s)");
+                writer.newLine();
+
+                attempts.forEach(attempt -> {
+                    try {
+                        writer.write(toCsvRow(attempt));
+                        writer.newLine();
+                    } catch (Exception e) {
+                        throw new RuntimeException("Failed to write attempt CSV row", e);
+                    }
+                });
+                writer.flush();
+            }
+        };
+
+        return Response.ok(stream)
+                .header("Content-Disposition", "attachment; filename=\"" + filename + "\"")
+                .header("Access-Control-Expose-Headers", "Content-Disposition, X-Resolved-User-Id")
+                .header("X-Resolved-User-Id", resolvedUserId)
+                .build();
     }
 
     /**
@@ -267,5 +344,63 @@ public class AdminResource {
                     .entity(Map.of("error", "Internal Server Error", "message", e.getMessage()))
                     .build();
         }
+    }
+
+    private String buildAttemptsExportFilename(String userId, String question) {
+        String questionPart = question == null ? "all" : sanitizeFilenamePart(question);
+        return "student_" + sanitizeFilenamePart(userId) + "_" + questionPart + "_attempts.csv";
+    }
+
+    private String resolveExistingUserId(String studentIdentifier) {
+        if (studentIdentifier == null || studentIdentifier.isBlank()) return null;
+
+        Optional<User> byPin = userRepo.findByPin(studentIdentifier);
+        if (byPin.isPresent()) return byPin.get().getId();
+
+        Optional<User> byId = userRepo.findById(studentIdentifier);
+        return byId.map(User::getId).orElse(null);
+    }
+
+    private String sanitizeFilenamePart(String value) {
+        if (value == null || value.isBlank()) return "NA";
+        String sanitized = value.trim().replaceAll("[^A-Za-z0-9._-]+", "_");
+        sanitized = sanitized.replaceAll("_+", "_");
+        return sanitized.isBlank() ? "NA" : sanitized;
+    }
+
+    private String toCsvRow(Attempt attempt) {
+        List<String> values = List.of(
+                attempt.getAttemptedAt() != null ? CSV_DATE_FORMATTER.format(attempt.getAttemptedAt()) : "N/A",
+                textOrDefault(attempt.getOperation()),
+                Boolean.TRUE.equals(attempt.getGameMode()) ? "Game Mode" : "Normal",
+                textOrDefault(attempt.getBeltOrDegree()),
+                textOrDefault(attempt.getQuestion()),
+                numberOrDefault(attempt.getUserAnswer()),
+                numberOrDefault(attempt.getCorrectAnswer()),
+                attempt.getCorrect() != null ? String.valueOf(attempt.getCorrect()) : "N/A",
+                responseSeconds(attempt.getResponseMs())
+        );
+        return values.stream().map(this::csvEscape).collect(Collectors.joining(","));
+    }
+
+    private String textOrDefault(String value) {
+        return value != null && !value.isBlank() ? value : "N/A";
+    }
+
+    private String numberOrDefault(Number value) {
+        return value != null ? String.valueOf(value) : "0";
+    }
+
+    private String responseSeconds(Long responseMs) {
+        if (responseMs == null) return "0";
+        return String.format(Locale.ROOT, "%.3f", responseMs / 1000.0);
+    }
+
+    private String csvEscape(String value) {
+        String safe = value != null ? value : "N/A";
+        if (safe.contains("\"") || safe.contains(",") || safe.contains("\n") || safe.contains("\r")) {
+            return "\"" + safe.replace("\"", "\"\"") + "\"";
+        }
+        return safe;
     }
 }

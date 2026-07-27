@@ -8,6 +8,7 @@ import org.springframework.data.mongodb.repository.Query;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 public interface AttemptRepository extends MongoRepository<Attempt, String> {
 
@@ -20,6 +21,8 @@ public interface AttemptRepository extends MongoRepository<Attempt, String> {
     // === USER-LEVEL QUERIES ===
     List<Attempt> findByUserId(String userId);
     List<Attempt> findByUserIdOrderByAttemptedAtDesc(String userId);
+    Stream<Attempt> streamByUserIdOrderByAttemptedAtDesc(String userId);
+    Stream<Attempt> streamByUserIdAndQuestionOrderByAttemptedAtDesc(String userId, String question);
 
     // With pagination
     List<Attempt> findByUserIdOrderByAttemptedAtDesc(String userId, org.springframework.data.domain.Pageable pageable);

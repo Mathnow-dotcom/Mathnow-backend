@@ -170,6 +170,15 @@ public class MongoIndexes implements ApplicationRunner {
                         .on("attemptedAt", Sort.Direction.DESC),
                 "Attempt.userId_timeline");
 
+        // CSV EXPORT: Recent attempts for one user and exact displayed question
+        // Mongo shell equivalent:
+        // db.attempts.createIndex({ userId: 1, question: 1, attemptedAt: -1 }, { name: "Attempt.userId_question_timeline" })
+        safeEnsureIndex(ops, new Index()
+                        .on("userId", Sort.Direction.ASC)
+                        .on("question", Sort.Direction.ASC)
+                        .on("attemptedAt", Sort.Direction.DESC),
+                "Attempt.userId_question_timeline");
+
         // LEVEL BREAKDOWN: User performance per level
         safeEnsureIndex(ops, new Index()
                         .on("userId", Sort.Direction.ASC)
