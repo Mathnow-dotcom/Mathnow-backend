@@ -49,14 +49,14 @@ public class QuizRun {
     private Boolean rocketQuizFailed;        // needs restart after practice
 
     // ===== BONUS MODE FIELDS (Game Mode 4) =====
-    // Per PRD: "Don't show the students the counter of stars or their streak of correct answers."
-    // Counter fields are server-only — @JsonIgnore prevents wire leakage. Only showBonusVideo
-    // and bonusComplete boolean signals are emitted by the response builders.
+    // Counter fields are server-only. Response builders expose only the explicit bonus DTO fields.
     @JsonIgnore private Integer bonusStreak;        // 0..bonusTargetCorrect: consecutive correct
     @JsonIgnore private Integer bonusTotalCorrect;  // analytics: total correct in this run
     @JsonIgnore private Integer bonusTotalWrong;    // analytics: total wrong in this run
     @JsonIgnore private Boolean bonusInPractice;    // gates resume into practice vs quiz
     @JsonIgnore private Integer bonusBatchNumber;   // 1-based batch counter; new batch every bonusQuestionsPerBatch slots
+    @JsonIgnore private Integer bonusLightningCount; // correct answers at or under 2 seconds since last reset
+    @JsonIgnore private Integer bonusStarCount;      // correct answers after 2 seconds since last reset
 
     // ===== PRETEST MODE FIELDS =====
     private Boolean pretestMode;           // true = this is a pretest quiz
@@ -215,6 +215,12 @@ public class QuizRun {
 
     public Integer getBonusBatchNumber() { return bonusBatchNumber; }
     public void setBonusBatchNumber(Integer bonusBatchNumber) { this.bonusBatchNumber = bonusBatchNumber; }
+
+    public Integer getBonusLightningCount() { return bonusLightningCount; }
+    public void setBonusLightningCount(Integer bonusLightningCount) { this.bonusLightningCount = bonusLightningCount; }
+
+    public Integer getBonusStarCount() { return bonusStarCount; }
+    public void setBonusStarCount(Integer bonusStarCount) { this.bonusStarCount = bonusStarCount; }
 
     // ===== PRETEST MODE GETTERS/SETTERS =====
     public Boolean getPretestMode() {

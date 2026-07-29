@@ -60,6 +60,8 @@ public final class QuizResponses {
         public Integer bonusVideoIntervalCorrect;
         public Boolean bonusInPractice;
         public Integer bonusCorrectStreak;
+        public Integer bonusLightningCount;
+        public Integer bonusStarCount;
 
         // Pretest mode
         public Long pretestTimeLimitMs;
@@ -108,6 +110,8 @@ public final class QuizResponses {
         public Integer bonusTargetCorrect;
         public Integer bonusVideoIntervalCorrect;
         public Integer bonusCorrectStreak;
+        public Integer bonusLightningCount;
+        public Integer bonusStarCount;
     }
 
     // -------- Answer / Practice / Inactivity response --------
@@ -177,13 +181,16 @@ public final class QuizResponses {
         public Boolean surfRequired;
         public Boolean slow;
 
-        // Bonus mode — boolean signals only (counters never leave the server, per PRD).
+        // Bonus mode
         public Boolean showBonusVideo;        // true on every Nth correct (default every 4) but NOT on completion
         public Boolean bonusComplete;         // true on the answer that hit bonusTargetCorrect (default 20)
         public Boolean bonusRequired;         // emitted by Rocket completion to tell the client to start bonus mode
         public Boolean bonusFailed;           // true on wrong/inactivity in bonus (UI uses this to show practice)
         public Boolean bonusQuizRestarted;    // true after correct practice answer resumes the bonus quiz
         public Integer bonusCorrectStreak;    // current consecutive-correct count (0..bonusTargetCorrect)
+        public Integer bonusLightningCount;   // correct answers <= 2 seconds since last reset/video interval
+        public Integer bonusStarCount;        // correct answers > 2 seconds since last reset/video interval
+        public String bonusAnswerBadge;       // "lightning" or "star" for the latest correct bonus answer
 
         // Quiz restart (surf/rocket)
         public List<?> questions;
@@ -213,6 +220,8 @@ public final class QuizResponses {
         public Integer totalCorrect;
         public Integer targetCorrect;
         public Integer bonusTargetCorrect;
+        public Integer bonusLightningCount;
+        public Integer bonusStarCount;
         public Boolean gameMode;
     }
 

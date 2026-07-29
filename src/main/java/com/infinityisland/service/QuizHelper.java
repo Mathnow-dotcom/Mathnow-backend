@@ -531,8 +531,9 @@ public class QuizHelper {
             s.rocketQuizFailures = nvl(run.getRocketQuizFailures(), 0);
         } else if (run.isBonusMode()) {
             s.gameModeType = GameModeType.BONUS.value();
-            // Per PRD: don't surface star/streak counter to client. Only the configured target.
             s.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
+            s.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            s.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         } else if (run.isLightningMode()) {
             s.gameModeType = GameModeType.LIGHTNING.value();
             s.totalCorrect = nvl(run.getTotalCorrect(), 0);
@@ -621,10 +622,11 @@ public class QuizHelper {
             out.resumed = true;
             out.gameMode = true;
             out.gameModeType = GameModeType.BONUS.value();
-            // Counter (bonusStreak) is intentionally NOT included — client must not show progress.
             out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
             out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
             out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
+            out.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            out.bonusStarCount = nvl(run.getBonusStarCount(), 0);
             // If user is mid-practice (got a wrong answer last and hasn't completed practice),
             // expose that boolean so the client renders the practice question rather than the next quiz question.
             if (Boolean.TRUE.equals(run.getBonusInPractice())) {
@@ -680,6 +682,8 @@ public class QuizHelper {
             out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
             out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
             out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
+            out.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            out.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         } else if (run.isLightningMode()) {
             out.gameMode = true;
             out.gameModeType = GameModeType.LIGHTNING.value();
@@ -740,6 +744,8 @@ public class QuizHelper {
             out.gameMode = true;
             out.gameModeType = GameModeType.BONUS.value();
             out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
+            out.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            out.bonusStarCount = nvl(run.getBonusStarCount(), 0);
             if (Boolean.TRUE.equals(run.getPassed())) {
                 out.beltAwarded = true;
                 out.bonusComplete = true;
@@ -783,6 +789,8 @@ public class QuizHelper {
             resp.gameMode = true;
             resp.gameModeType = GameModeType.BONUS.value();
             resp.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
+            resp.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            resp.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         } else if (run.isLightningMode()) {
             resp.gameMode = true;
             resp.gameModeType = GameModeType.LIGHTNING.value();
@@ -923,6 +931,8 @@ public class QuizHelper {
         } else if (run.isBonusMode()) {
             out.gameModeType = GameModeType.BONUS.value();
             out.bonusComplete = true;
+            out.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            out.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         } else if (run.isLightningMode()) {
             out.gameModeType = GameModeType.LIGHTNING.value();
             out.lightningComplete = true;
@@ -1048,6 +1058,8 @@ public class QuizHelper {
         } else if (run.isBonusMode()) {
             resp.gameMode = true;
             resp.gameModeType = GameModeType.BONUS.value();
+            resp.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+            resp.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         } else if (run.isLightningMode()) {
             resp.gameMode = true;
             resp.gameModeType = GameModeType.LIGHTNING.value();

@@ -51,6 +51,9 @@ import java.util.stream.Collectors;
 public class BonusModeHandler {
 
     private static final Logger log = LoggerFactory.getLogger(BonusModeHandler.class);
+    private static final long BONUS_LIGHTNING_CUTOFF_MS = 2_000L;
+    private static final String BONUS_BADGE_LIGHTNING = "lightning";
+    private static final String BONUS_BADGE_STAR = "star";
 
     private final QuizHelper helper;
     private final CachedQuizRunService cachedQuizRuns;
@@ -115,6 +118,7 @@ public class BonusModeHandler {
         run.setBonusTotalWrong(0);
         run.setBonusInPractice(false);
         run.setBonusBatchNumber(1);
+        resetBonusBadgeCounts(run);
 
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         run.setCreatedAt(now);
@@ -145,6 +149,8 @@ public class BonusModeHandler {
         out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
         out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
         out.bonusCorrectStreak = 0;
+        out.bonusLightningCount = 0;
+        out.bonusStarCount = 0;
         out.level = lvl;
         out.beltOrDegree = belt;
         out.operation = op;
@@ -161,6 +167,8 @@ public class BonusModeHandler {
         out.bonusTargetCorrect = gameConfig.getBonusTargetCorrect();
         out.bonusVideoIntervalCorrect = gameConfig.getBonusVideoIntervalCorrect();
         out.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
+        out.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+        out.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         out.currentIndex = nvl(run.getCurrentIndex(), 0);
         out.level = run.getLevel();
         out.beltOrDegree = run.getBeltOrDegree();
@@ -199,6 +207,7 @@ public class BonusModeHandler {
         int newStreak = nvl(run.getBonusStreak(), 0) + 1;
         run.setBonusStreak(newStreak);
         run.setBonusTotalCorrect(nvl(run.getBonusTotalCorrect(), 0) + 1);
+        String bonusAnswerBadge = applyBonusAnswerBadge(run, responseMs);
 
         log.info("[BONUS] Correct! streak={}/{}", newStreak, gameConfig.getBonusTargetCorrect());
 
@@ -215,11 +224,14 @@ public class BonusModeHandler {
         // Completion takes priority over the video boundary (Q8): if we just hit the target,
         // we award the belt and let the frontend play its win video — no intermediate video signal.
         if (newStreak >= gameConfig.getBonusTargetCorrect()) {
-            return completeBonusMode(run, dailyStats);
+            return completeBonusMode(run, dailyStats, bonusAnswerBadge);
         }
 
         // Did we cross a video boundary? (Every 4 in a row by default; never on completion.)
         boolean videoBoundary = newStreak > 0 && (newStreak % gameConfig.getBonusVideoIntervalCorrect() == 0);
+        if (videoBoundary) {
+            resetBonusBadgeCounts(run);
+        }
 
         // Advance the index. If we exhausted the current batch, regenerate (Q6).
         int nextIndex = nvl(run.getCurrentIndex(), 0) + 1;
@@ -236,6 +248,9 @@ public class BonusModeHandler {
         if (videoBoundary) resp.showBonusVideo = true;
         resp.dailyStats = dailyStats;
         resp.bonusCorrectStreak = newStreak;
+        resp.bonusAnswerBadge = bonusAnswerBadge;
+        resp.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+        resp.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         return resp;
     }
 
@@ -250,6 +265,7 @@ public class BonusModeHandler {
         run.setBonusTotalWrong(nvl(run.getBonusTotalWrong(), 0) + 1);
         run.setBonusStreak(0);
         run.setBonusInPractice(true);
+        resetBonusBadgeCounts(run);
 
         helper.touch(run);
         cachedQuizRuns.save(run);
@@ -268,6 +284,8 @@ public class BonusModeHandler {
         resp.gameMode = true;
         resp.gameModeType = GameModeType.BONUS.value();
         resp.bonusCorrectStreak = 0;
+        resp.bonusLightningCount = 0;
+        resp.bonusStarCount = 0;
         return resp;
     }
 
@@ -299,10 +317,12 @@ public class BonusModeHandler {
         resp.gameMode = true;
         resp.gameModeType = GameModeType.BONUS.value();
         resp.bonusCorrectStreak = nvl(run.getBonusStreak(), 0);
+        resp.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+        resp.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         return resp;
     }
 
-    private Object completeBonusMode(QuizRun run, DailyStatsResponse dailyStats) {
+    private Object completeBonusMode(QuizRun run, DailyStatsResponse dailyStats, String bonusAnswerBadge) {
         log.info("[BONUS] Target reached ({} consecutive correct). Awarding belt.",
                 gameConfig.getBonusTargetCorrect());
 
@@ -344,7 +364,25 @@ public class BonusModeHandler {
         out.sessionCorrectCount = nvl(run.getMainFlowCorrect(), 0);
         out.dailyStats = dailyStats;
         out.bonusCorrectStreak = gameConfig.getBonusTargetCorrect();
+        out.bonusAnswerBadge = bonusAnswerBadge;
+        out.bonusLightningCount = nvl(run.getBonusLightningCount(), 0);
+        out.bonusStarCount = nvl(run.getBonusStarCount(), 0);
         return out;
+    }
+
+    private String applyBonusAnswerBadge(QuizRun run, long responseMs) {
+        if (responseMs <= BONUS_LIGHTNING_CUTOFF_MS) {
+            run.setBonusLightningCount(nvl(run.getBonusLightningCount(), 0) + 1);
+            return BONUS_BADGE_LIGHTNING;
+        }
+
+        run.setBonusStarCount(nvl(run.getBonusStarCount(), 0) + 1);
+        return BONUS_BADGE_STAR;
+    }
+
+    private void resetBonusBadgeCounts(QuizRun run) {
+        run.setBonusLightningCount(0);
+        run.setBonusStarCount(0);
     }
 
     // ===== QUESTION GENERATION =====
