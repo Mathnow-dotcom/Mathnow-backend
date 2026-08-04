@@ -375,8 +375,8 @@ public class AdminResource {
                 Boolean.TRUE.equals(attempt.getGameMode()) ? "Game Mode" : "Normal",
                 textOrDefault(attempt.getBeltOrDegree()),
                 textOrDefault(attempt.getQuestion()),
-                numberOrDefault(attempt.getUserAnswer()),
-                numberOrDefault(attempt.getCorrectAnswer()),
+                valueOrDefault(attempt.getUserAnswer()),
+                valueOrDefault(attempt.getCorrectAnswer()),
                 attempt.getCorrect() != null ? String.valueOf(attempt.getCorrect()) : "N/A",
                 responseSeconds(attempt.getResponseMs())
         );
@@ -387,7 +387,7 @@ public class AdminResource {
         return value != null && !value.isBlank() ? value : "N/A";
     }
 
-    private String numberOrDefault(Number value) {
+    private String valueOrDefault(Object value) {
         return value != null ? String.valueOf(value) : "0";
     }
 

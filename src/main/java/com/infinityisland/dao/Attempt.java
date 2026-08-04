@@ -25,8 +25,8 @@ public class Attempt {
     private String question;      // Display string: "2 + 3"
 
     // === ANSWER DATA ===
-    private Integer userAnswer;
-    private Integer correctAnswer;
+    private Object userAnswer;
+    private Object correctAnswer;
     private List<Integer> choices;  // The 4 choices shown to user
     private Boolean correct;
     private Long responseMs;
@@ -122,19 +122,19 @@ public class Attempt {
         this.question = question;
     }
 
-    public Integer getUserAnswer() {
+    public Object getUserAnswer() {
         return userAnswer;
     }
 
-    public void setUserAnswer(Integer userAnswer) {
+    public void setUserAnswer(Object userAnswer) {
         this.userAnswer = userAnswer;
     }
 
-    public Integer getCorrectAnswer() {
+    public Object getCorrectAnswer() {
         return correctAnswer;
     }
 
-    public void setCorrectAnswer(Integer correctAnswer) {
+    public void setCorrectAnswer(Object correctAnswer) {
         this.correctAnswer = correctAnswer;
     }
 
@@ -239,12 +239,12 @@ public class Attempt {
             return this;
         }
 
-        public Builder userAnswer(Integer userAnswer) {
+        public Builder userAnswer(Object userAnswer) {
             attempt.userAnswer = userAnswer;
             return this;
         }
 
-        public Builder correctAnswer(Integer correctAnswer) {
+        public Builder correctAnswer(Object correctAnswer) {
             attempt.correctAnswer = correctAnswer;
             return this;
         }

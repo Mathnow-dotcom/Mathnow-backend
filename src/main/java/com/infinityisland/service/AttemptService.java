@@ -11,6 +11,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -86,6 +87,9 @@ public class AttemptService {
             b = question.getParams().getB();
         }
 
+        Object storedUserAnswer = storedUserAnswer(run, question, userAnswer);
+        Object storedCorrectAnswer = storedCorrectAnswer(run, question);
+
         return Attempt.builder()
                 // References
                 .quizRunId(run.getId())
@@ -101,8 +105,8 @@ public class AttemptService {
                 .question(question.getQuestion())
 
                 // Answer data
-                .userAnswer(userAnswer)
-                .correctAnswer(question.getCorrectAnswer())
+                .userAnswer(storedUserAnswer)
+                .correctAnswer(storedCorrectAnswer)
                 .choices(question.getChoices())
                 .correct(correct)
                 .responseMs(responseMs)
@@ -113,6 +117,35 @@ public class AttemptService {
                 .attemptedAt(Instant.now())
 
                 .build();
+    }
+
+    private Object storedUserAnswer(QuizRun run, GeneratedQuestion question, Integer userAnswer) {
+        if (!isRocketQuestion(run, question)) return userAnswer;
+        if (userAnswer == null) return null;
+
+        List<String> textChoices = question.getTextChoices();
+        if (textChoices == null || userAnswer < 0 || userAnswer >= textChoices.size()) {
+            return null;
+        }
+
+        return textChoices.get(userAnswer);
+    }
+
+    private Object storedCorrectAnswer(QuizRun run, GeneratedQuestion question) {
+        if (!isRocketQuestion(run, question)) return question.getCorrectAnswer();
+
+        if (question.getCorrectAnswer() == null) return null;
+        List<String> textChoices = question.getTextChoices();
+        if (textChoices == null || question.getCorrectAnswer() < 0 || question.getCorrectAnswer() >= textChoices.size()) {
+            return null;
+        }
+
+        return textChoices.get(question.getCorrectAnswer());
+    }
+
+    private boolean isRocketQuestion(QuizRun run, GeneratedQuestion question) {
+        return (run != null && run.isRocketMode())
+                || (question != null && "rocket".equalsIgnoreCase(question.getSource()));
     }
 
     /**
