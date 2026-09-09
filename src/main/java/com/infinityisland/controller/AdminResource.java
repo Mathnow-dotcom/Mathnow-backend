@@ -119,7 +119,8 @@ public class AdminResource {
     public Response exportUserAttempts(
             @HeaderParam("x-pin") String adminPin,
             @PathParam("userId") String userId,
-            @QueryParam("question") String question) {
+            @QueryParam("question") String question,
+            @QueryParam("limitPerQuestion") Integer limitPerQuestion) {
 
         if (!gameConfigService.isValidAdminPin(adminPin)) {
             return Response.status(401)
@@ -144,6 +145,13 @@ public class AdminResource {
                     .build();
         }
 
+        if (limitPerQuestion != null && limitPerQuestion < 1) {
+            return Response.status(400)
+                    .type(MediaType.APPLICATION_JSON_TYPE)
+                    .entity(Map.of("error", "limitPerQuestion must be greater than 0"))
+                    .build();
+        }
+
         String requestedQuestion = question != null && !question.isBlank() ? question : null;
         String filename = buildAttemptsExportFilename(requestedStudentId, requestedQuestion);
 
@@ -157,14 +165,11 @@ public class AdminResource {
                 writer.write("Date,Operation,Game Mode,Belt/Degree,Question,User Answer,Correct Answer,Is Correct,Response Time (s)");
                 writer.newLine();
 
-                attempts.forEach(attempt -> {
-                    try {
-                        writer.write(toCsvRow(attempt));
-                        writer.newLine();
-                    } catch (Exception e) {
-                        throw new RuntimeException("Failed to write attempt CSV row", e);
-                    }
-                });
+                if (limitPerQuestion != null) {
+                    writeLatestPerQuestionRows(writer, attempts, limitPerQuestion, requestedQuestion != null);
+                } else {
+                    writeAllAttemptRows(writer, attempts);
+                }
                 writer.flush();
             }
         };
@@ -349,6 +354,37 @@ public class AdminResource {
     private String buildAttemptsExportFilename(String userId, String question) {
         String questionPart = question == null ? "all" : sanitizeFilenamePart(question);
         return "student_" + sanitizeFilenamePart(userId) + "_" + questionPart + "_attempts.csv";
+    }
+
+    private void writeAllAttemptRows(BufferedWriter writer, Stream<Attempt> attempts) {
+        attempts.forEach(attempt -> writeAttemptRow(writer, attempt));
+    }
+
+    private void writeLatestPerQuestionRows(BufferedWriter writer, Stream<Attempt> attempts,
+                                            int limitPerQuestion, boolean singleQuestionExport) {
+        Map<String, Integer> countsByQuestion = new HashMap<>();
+
+        attempts.forEach(attempt -> {
+            String key = singleQuestionExport ? "__single_question__" : attemptQuestionGroupKey(attempt);
+            int count = countsByQuestion.getOrDefault(key, 0);
+            if (count >= limitPerQuestion) return;
+
+            countsByQuestion.put(key, count + 1);
+            writeAttemptRow(writer, attempt);
+        });
+    }
+
+    private String attemptQuestionGroupKey(Attempt attempt) {
+        return textOrDefault(attempt.getOperation()) + "\u0000" + textOrDefault(attempt.getQuestion());
+    }
+
+    private void writeAttemptRow(BufferedWriter writer, Attempt attempt) {
+        try {
+            writer.write(toCsvRow(attempt));
+            writer.newLine();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to write attempt CSV row", e);
+        }
     }
 
     private String resolveExistingUserId(String studentIdentifier) {
