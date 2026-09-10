@@ -37,6 +37,7 @@ public interface DailySummaryRepository extends MongoRepository<DailySummary, St
                 .mapToLong(DailySummary::getTotalActiveMs)
                 .sum();
     }
+
     void deleteByUserId(String userId);
     List<DailySummary> findByUserIdInAndDate(List<String> userIds, LocalDate date);
     List<DailySummary> findByUserIdIn(List<String> userIds);

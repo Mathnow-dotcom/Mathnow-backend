@@ -248,7 +248,7 @@ public class AdminResource {
 
                 DailySummary todayData = todaySummaryMap.get(userId);
                 long todayCorrect = (todayData != null) ? todayData.getCorrectCount() : 0;
-                long todayActiveMs = (todayData != null) ? todayData.getTotalActiveMs() : 0;
+                long todayActiveMs = (todayData != null) ? todayData.getAppUsageMs() : 0;
                 boolean loggedInToday = today.toString().equals(user.getLastLoginDate());
 
                 Map<String, Object> entry = new LinkedHashMap<>();
@@ -321,7 +321,7 @@ public class AdminResource {
             Map<String, Long> grandTotalActiveMsMap = paginatedSummaries.stream()
                     .collect(Collectors.groupingBy(
                             s -> s.getUserId().toString(),
-                            Collectors.summingLong(DailySummary::getTotalActiveMs)
+                            Collectors.summingLong(DailySummary::getAppUsageMs)
                     ));
 
             // Add grand total active time to results

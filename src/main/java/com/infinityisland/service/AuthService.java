@@ -18,11 +18,14 @@ public class AuthService {
     private final CachedUserService cachedUsers;
     private final UserService userService;
     private final DailyService dailyService;
+    private final AppUsageService appUsageService;
 
-    public AuthService(CachedUserService cachedUsers, UserService userService, DailyService dailyService) {
+    public AuthService(CachedUserService cachedUsers, UserService userService, DailyService dailyService,
+                       AppUsageService appUsageService) {
         this.cachedUsers = cachedUsers;
         this.userService = userService;
         this.dailyService = dailyService;
+        this.appUsageService = appUsageService;
     }
 
     public record LoginResult(UserPayload user, String token) {}
@@ -35,6 +38,7 @@ public class AuthService {
         public String theme;
         public Map<String, Object> progress;
         public Map<String, Object> dailyStats;
+        public Map<String, Object> appUsage;
         public int currentStreak;
         public int grandTotal;
         public String lastLoginDate;
@@ -160,6 +164,13 @@ public class AuthService {
             daily.put("correctCount", correct);
             daily.put("totalActiveMs", activeMs);
             payload.dailyStats = daily;
+
+            AppUsageService.Usage usage = appUsageService.start(user.getId());
+            payload.appUsage = new HashMap<>();
+            payload.appUsage.put("sessionId", usage.sessionId());
+            payload.appUsage.put("date", usage.date());
+            payload.appUsage.put("todayUsageMs", usage.todayUsageMs());
+            payload.appUsage.put("lifetimeUsageMs", usage.lifetimeUsageMs());
 
             return new LoginResult(payload, pin);
 

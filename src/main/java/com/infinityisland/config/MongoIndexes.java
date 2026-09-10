@@ -6,6 +6,7 @@ import com.infinityisland.dao.DailySummary;
 import com.infinityisland.dao.GeneratedQuestion;
 import com.infinityisland.dao.QuizRun;
 import com.infinityisland.dao.Attempt;
+import com.infinityisland.dao.AppUsageSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -41,6 +42,7 @@ public class MongoIndexes implements ApplicationRunner {
         ensureQuizRunIndexes();
         ensureAttemptIndexes();
         ensureDailySummaryIndexes();
+        ensureAppUsageSessionIndexes();
 
         log.info("[INDEXES] All indexes ensured");
     }
@@ -222,6 +224,14 @@ public class MongoIndexes implements ApplicationRunner {
                         .on("date", Sort.Direction.ASC)
                         .unique(),
                 "DailySummary.userId_date_unique");
+    }
+
+    private void ensureAppUsageSessionIndexes() {
+        IndexOperations ops = mongo.indexOps(AppUsageSession.class);
+        safeEnsureIndex(ops, new Index().on("userId", Sort.Direction.ASC)
+                        .unique()
+                        .partial(PartialIndexFilter.of(Criteria.where("active").is(true))),
+                "AppUsageSession.userId_active");
     }
 
     /**

@@ -18,6 +18,8 @@ public class DailySummary {
 
     private int correctCount;
     private long totalActiveMs;
+    // App-wide usage. Kept separate from totalActiveMs, which is quiz/game timing.
+    private long appUsageMs;
 
     public DailySummary() {
     }
@@ -27,6 +29,7 @@ public class DailySummary {
         this.date = date;
         this.correctCount = 0;
         this.totalActiveMs = 0L;
+        this.appUsageMs = 0L;
     }
 
     public String getId() {
@@ -65,6 +68,10 @@ public class DailySummary {
         this.totalActiveMs = totalActiveMs;
     }
 
+    public long getAppUsageMs() { return appUsageMs; }
+
+    public void setAppUsageMs(long appUsageMs) { this.appUsageMs = appUsageMs; }
+
     /**
      * Convenience for controllers/services that want a map payload.
      */
@@ -75,6 +82,7 @@ public class DailySummary {
         m.put("date", String.valueOf(date));
         m.put("correctCount", correctCount);
         m.put("totalActiveMs", totalActiveMs);
+        m.put("appUsageMs", appUsageMs);
         return m;
     }
 }

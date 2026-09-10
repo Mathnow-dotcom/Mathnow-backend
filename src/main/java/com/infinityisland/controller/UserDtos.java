@@ -10,4 +10,6 @@ public final class UserDtos {
     public record ThemeRequest(String themeKey) {}
 
     public record RateVideoRequest(Integer rating, Integer level, String beltOrDegree) {}
+
+    public record UsageSessionRequest(String sessionId) {}
 }

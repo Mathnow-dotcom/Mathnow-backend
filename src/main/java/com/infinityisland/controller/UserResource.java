@@ -5,6 +5,8 @@ import com.infinityisland.service.GameConfigService;
 import com.infinityisland.service.ProgressionService;
 import com.infinityisland.service.UserService;
 import com.infinityisland.service.PinUserResolver;
+import com.infinityisland.service.AppUsageService;
+import com.infinityisland.controller.QuizResponses.DailyStatsResponse;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
@@ -23,20 +25,46 @@ public class UserResource {
   private final GameConfigService gameConfig;
   private final ProgressionService progression;
   private final PinUserResolver pinUserResolver;
+  private final AppUsageService appUsage;
 
   public UserResource(UserService users, GameConfigService gameConfig,
-                      ProgressionService progression, PinUserResolver pinUserResolver) {
+                      ProgressionService progression, PinUserResolver pinUserResolver,
+                      AppUsageService appUsage) {
     this.users = users;
     this.gameConfig = gameConfig;
     this.progression = progression;
     this.pinUserResolver = pinUserResolver;
+    this.appUsage = appUsage;
   }
 
   // 1) GET /api/user/daily
   @GET
   @Path("/daily")
   public Response daily(@HeaderParam("x-pin") String pin) {
-    return Response.ok(users.getDaily(pin)).build();
+    DailyStatsResponse stats = users.getDaily(pin);
+    String userId = pinUserResolver.ensureUserId(pin);
+    if (userId != null) {
+      AppUsageService.Usage usage = appUsage.getTotals(userId);
+      stats.appUsageMs = usage.todayUsageMs();
+      stats.grandTotalAppUsageMs = usage.lifetimeUsageMs();
+    }
+    return Response.ok(stats).build();
+  }
+
+  @POST
+  @Path("/usage/heartbeat")
+  public Response usageHeartbeat(@HeaderParam("x-pin") String pin, UserDtos.UsageSessionRequest body) {
+    String userId = pinUserResolver.ensureUserId(pin);
+    if (userId == null || body == null) return Response.status(400).entity(Map.of("error", "Usage session required")).build();
+    return Response.ok(appUsage.checkpoint(userId, body.sessionId())).build();
+  }
+
+  @POST
+  @Path("/usage/stop")
+  public Response usageStop(@HeaderParam("x-pin") String pin, UserDtos.UsageSessionRequest body) {
+    String userId = pinUserResolver.ensureUserId(pin);
+    if (userId == null || body == null) return Response.status(400).entity(Map.of("error", "Usage session required")).build();
+    return Response.ok(appUsage.stop(userId, body.sessionId())).build();
   }
 
   // 2) GET /api/user/progress

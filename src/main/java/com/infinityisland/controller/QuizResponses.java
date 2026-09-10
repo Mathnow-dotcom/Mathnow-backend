@@ -236,6 +236,8 @@ public final class QuizResponses {
         public Long totalActiveMs;
         public Long grandTotal;
         public Long grandTotalActiveMs;
+        public Long appUsageMs;
+        public Long grandTotalAppUsageMs;
         public Integer currentStreak;
     }
 
