@@ -64,7 +64,7 @@ public class UserResource {
   public Response usageStop(@HeaderParam("x-pin") String pin, UserDtos.UsageSessionRequest body) {
     String userId = pinUserResolver.ensureUserId(pin);
     if (userId == null || body == null) return Response.status(400).entity(Map.of("error", "Usage session required")).build();
-    return Response.ok(appUsage.stop(userId, body.sessionId())).build();
+    return Response.ok(appUsage.stop(userId, body.sessionId(), body.inactiveDurationMs())).build();
   }
 
   // 2) GET /api/user/progress

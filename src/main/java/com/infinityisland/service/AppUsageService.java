@@ -59,13 +59,20 @@ public class AppUsageService {
         return totals(userId, session.getId());
     }
 
-    public synchronized Usage stop(String userId, String sessionId) {
+    public synchronized Usage stop(String userId, String sessionId, Long inactiveDurationMs) {
         AppUsageSession session = sessions.findById(sessionId)
                 .filter(s -> s.getUserId().equals(userId))
                 .orElse(null);
         if (session == null) return totals(userId, null);
         if (session.isActive()) {
             settle(session, Instant.now());
+            if (inactiveDurationMs != null && inactiveDurationMs > 0 && !session.isInactivityDeductionApplied()) {
+                // Persist the guard before changing totals, so a retried automatic
+                // logout cannot deduct the same inactivity period twice.
+                session.setInactivityDeductionApplied(true);
+                sessions.save(session);
+                deductToday(session.getUserId(), inactiveDurationMs);
+            }
             session.setActive(false);
             sessions.save(session);
         }
@@ -103,6 +110,12 @@ public class AppUsageService {
         Query query = new Query(Criteria.where("userId").is(userId).and("date").is(date));
         Update update = new Update().setOnInsert("userId", userId).setOnInsert("date", date).inc("appUsageMs", elapsedMs);
         mongo.upsert(query, update, DailySummary.class);
+    }
+
+    private void deductToday(String userId, long durationMs) {
+        LocalDate today = LocalDate.now(APP_ZONE);
+        Query query = new Query(Criteria.where("userId").is(userId).and("date").is(today));
+        mongo.updateFirst(query, new Update().inc("appUsageMs", -durationMs), DailySummary.class);
     }
 
     private Usage totals(String userId, String sessionId) {

@@ -13,6 +13,7 @@ public class AppUsageSession {
     private String userId;
     private boolean active;
     private Instant lastAccountedAt;
+    private boolean inactivityDeductionApplied;
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -22,4 +23,8 @@ public class AppUsageSession {
     public void setActive(boolean active) { this.active = active; }
     public Instant getLastAccountedAt() { return lastAccountedAt; }
     public void setLastAccountedAt(Instant lastAccountedAt) { this.lastAccountedAt = lastAccountedAt; }
+    public boolean isInactivityDeductionApplied() { return inactivityDeductionApplied; }
+    public void setInactivityDeductionApplied(boolean inactivityDeductionApplied) {
+        this.inactivityDeductionApplied = inactivityDeductionApplied;
+    }
 }

@@ -11,5 +11,5 @@ public final class UserDtos {
 
     public record RateVideoRequest(Integer rating, Integer level, String beltOrDegree) {}
 
-    public record UsageSessionRequest(String sessionId) {}
+    public record UsageSessionRequest(String sessionId, Long inactiveDurationMs) {}
 }
