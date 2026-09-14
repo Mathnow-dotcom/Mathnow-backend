@@ -56,7 +56,7 @@ public class UserResource {
   public Response usageHeartbeat(@HeaderParam("x-pin") String pin, UserDtos.UsageSessionRequest body) {
     String userId = pinUserResolver.ensureUserId(pin);
     if (userId == null || body == null) return Response.status(400).entity(Map.of("error", "Usage session required")).build();
-    return Response.ok(appUsage.checkpoint(userId, body.sessionId())).build();
+    return Response.ok(appUsage.checkpoint(userId, body.sessionId(), Boolean.TRUE.equals(body.resetElapsed()))).build();
   }
 
   @POST

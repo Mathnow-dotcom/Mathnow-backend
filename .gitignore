@@ -9,7 +9,6 @@ bin/
 **/.DS_Store
 .idea/
 *.iml
-.vscode/
 *.swp
 
 # ===== JAR backups (never commit; regenerate via `./gradlew bootJar`) =====
@@ -40,10 +39,11 @@ updated-config.json
 # ===== Local config overrides (NEVER commit secrets) =====
 application-local.properties
 *-local.properties
-.env
 *.env
 
 # ===== Workspace-private (Conductor / Claude) =====
 .context/
 .claude/
 .elasticbeanstalk/
+config.bat
+node_modules

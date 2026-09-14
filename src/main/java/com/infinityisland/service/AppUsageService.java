@@ -21,6 +21,9 @@ import java.util.UUID;
 @Service
 public class AppUsageService {
     private static final ZoneId APP_ZONE = ZoneId.of("America/Los_Angeles");
+    // Browser heartbeats run every 15 seconds. Larger gaps mean the tab/browser
+    // was suspended or a prior session was not cleanly closed, not active usage.
+    private static final Duration MAX_UNCHECKPOINTED_USAGE = Duration.ofSeconds(45);
 
     public record Usage(String sessionId, String date, long todayUsageMs, long lifetimeUsageMs) {}
 
@@ -36,6 +39,13 @@ public class AppUsageService {
 
     public synchronized Usage start(String userId) {
         AppUsageSession session = sessions.findFirstByUserIdAndActiveTrue(userId).orElse(null);
+        if (session != null && isStale(session, Instant.now())) {
+            // Never settle a stale session: doing so would count time while the
+            // app was closed, refreshed, or suspended.
+            session.setActive(false);
+            sessions.save(session);
+            session = null;
+        }
         if (session == null) {
             AppUsageSession created = new AppUsageSession();
             created.setId(UUID.randomUUID().toString());
@@ -53,9 +63,17 @@ public class AppUsageService {
         return totals(userId, session.getId());
     }
 
-    public synchronized Usage checkpoint(String userId, String sessionId) {
+    public synchronized Usage checkpoint(String userId, String sessionId, boolean resetElapsed) {
         AppUsageSession session = requireActiveSession(userId, sessionId);
-        settle(session, Instant.now());
+        Instant now = Instant.now();
+        if (resetElapsed) {
+            // The browser became visible again. Restart from this point so time
+            // spent in a background tab cannot be credited as app usage.
+            session.setLastAccountedAt(now);
+            sessions.save(session);
+        } else {
+            settle(session, now);
+        }
         return totals(userId, session.getId());
     }
 
@@ -94,6 +112,11 @@ public class AppUsageService {
     private void settle(AppUsageSession session, Instant now) {
         Instant cursor = session.getLastAccountedAt();
         if (cursor == null || !now.isAfter(cursor)) return;
+        if (Duration.between(cursor, now).compareTo(MAX_UNCHECKPOINTED_USAGE) > 0) {
+            session.setLastAccountedAt(now);
+            sessions.save(session);
+            return;
+        }
         while (cursor.isBefore(now)) {
             ZonedDateTime local = cursor.atZone(APP_ZONE);
             Instant boundary = local.toLocalDate().plusDays(1).atStartOfDay(APP_ZONE).toInstant();
@@ -104,6 +127,12 @@ public class AppUsageService {
         }
         session.setLastAccountedAt(now);
         sessions.save(session);
+    }
+
+    private boolean isStale(AppUsageSession session, Instant now) {
+        Instant lastAccountedAt = session.getLastAccountedAt();
+        return lastAccountedAt == null ||
+                Duration.between(lastAccountedAt, now).compareTo(MAX_UNCHECKPOINTED_USAGE) > 0;
     }
 
     private void increment(LocalDate date, String userId, long elapsedMs) {
