@@ -21,9 +21,10 @@ import java.util.UUID;
 @Service
 public class AppUsageService {
     private static final ZoneId APP_ZONE = ZoneId.of("America/Los_Angeles");
-    // Browser heartbeats run every 15 seconds. Larger gaps mean the tab/browser
-    // was suspended or a prior session was not cleanly closed, not active usage.
-    private static final Duration MAX_UNCHECKPOINTED_USAGE = Duration.ofSeconds(45);
+    // A short tab switch is still part of the current authenticated session and
+    // may be retained when the user returns. Anything beyond the application
+    // inactivity window is a suspended/stale session, never usage to credit.
+    private static final Duration MAX_UNCHECKPOINTED_USAGE = Duration.ofMinutes(5).plusSeconds(15);
 
     public record Usage(String sessionId, String date, long todayUsageMs, long lifetimeUsageMs) {}
 
@@ -83,8 +84,10 @@ public class AppUsageService {
                 .orElse(null);
         if (session == null) return totals(userId, null);
         if (session.isActive()) {
-            settle(session, Instant.now());
-            if (inactiveDurationMs != null && inactiveDurationMs > 0 && !session.isInactivityDeductionApplied()) {
+            Instant now = Instant.now();
+            boolean finalIntervalWasCounted = !isStale(session, now);
+            settle(session, now);
+            if (finalIntervalWasCounted && inactiveDurationMs != null && inactiveDurationMs > 0 && !session.isInactivityDeductionApplied()) {
                 // Persist the guard before changing totals, so a retried automatic
                 // logout cannot deduct the same inactivity period twice.
                 session.setInactivityDeductionApplied(true);
@@ -143,8 +146,11 @@ public class AppUsageService {
 
     private void deductToday(String userId, long durationMs) {
         LocalDate today = LocalDate.now(APP_ZONE);
-        Query query = new Query(Criteria.where("userId").is(userId).and("date").is(today));
-        mongo.updateFirst(query, new Update().inc("appUsageMs", -durationMs), DailySummary.class);
+        daily.findByUserIdAndDate(userId, today).ifPresent(summary -> {
+            Query query = new Query(Criteria.where("userId").is(userId).and("date").is(today));
+            long nextUsageMs = Math.max(0, summary.getAppUsageMs() - durationMs);
+            mongo.updateFirst(query, new Update().set("appUsageMs", nextUsageMs), DailySummary.class);
+        });
     }
 
     private Usage totals(String userId, String sessionId) {
