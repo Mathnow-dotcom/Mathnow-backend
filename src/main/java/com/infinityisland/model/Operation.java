@@ -4,7 +4,8 @@ public enum Operation {
     ADD("add"),
     SUB("sub"),
     MUL("mul"),
-    DIV("div");
+    DIV("div"),
+    FRAC("frac");
 
     private final String value;
 

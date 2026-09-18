@@ -27,7 +27,7 @@ public class Attempt {
     // === ANSWER DATA ===
     private Object userAnswer;
     private Object correctAnswer;
-    private List<Integer> choices;  // The 4 choices shown to user
+    private List<Object> choices;  // The choices shown to user
     private Boolean correct;
     private Long responseMs;
 
@@ -138,11 +138,11 @@ public class Attempt {
         this.correctAnswer = correctAnswer;
     }
 
-    public List<Integer> getChoices() {
+    public List<Object> getChoices() {
         return choices;
     }
 
-    public void setChoices(List<Integer> choices) {
+    public void setChoices(List<Object> choices) {
         this.choices = choices;
     }
 
@@ -249,7 +249,7 @@ public class Attempt {
             return this;
         }
 
-        public Builder choices(List<Integer> choices) {
+        public Builder choices(List<Object> choices) {
             attempt.choices = choices;
             return this;
         }

@@ -347,6 +347,7 @@ public class GameConfigService {
             if (Operation.SUB.value().equalsIgnoreCase(operation)) return 11;
             if (Operation.MUL.value().equalsIgnoreCase(operation)) return 10;
             if (Operation.DIV.value().equalsIgnoreCase(operation)) return 13;
+            if (Operation.FRAC.value().equalsIgnoreCase(operation)) return 6;
             return 0;
         }
         return opConfig.getMaxLevel();

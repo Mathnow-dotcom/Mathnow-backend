@@ -9,6 +9,7 @@ import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Map;
 import java.util.List;
 
 @Document("generated_questions")
@@ -26,6 +27,10 @@ public class GeneratedQuestion {
     private String question;
     private Integer correctAnswer;
     private List<Integer> choices = new ArrayList<>();
+    // Fraction answers use a fixed integer scale internally so the established
+    // quiz/attempt APIs remain integer-safe. The client renders these labels.
+    private Map<Integer, String> answerLabels;
+    private Integer answerScale;
     private List<String> textChoices = new ArrayList<>();  // Rocket mode: expression text choices
 
     private String source; // "current" | "previous"
@@ -130,6 +135,22 @@ public class GeneratedQuestion {
 
     public void setChoices(List<Integer> choices) {
         this.choices = choices;
+    }
+
+    public Map<Integer, String> getAnswerLabels() {
+        return answerLabels;
+    }
+
+    public void setAnswerLabels(Map<Integer, String> answerLabels) {
+        this.answerLabels = answerLabels;
+    }
+
+    public Integer getAnswerScale() {
+        return answerScale;
+    }
+
+    public void setAnswerScale(Integer answerScale) {
+        this.answerScale = answerScale;
     }
 
     public List<String> getTextChoices() {

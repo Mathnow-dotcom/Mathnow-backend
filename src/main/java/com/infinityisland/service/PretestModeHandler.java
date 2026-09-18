@@ -317,6 +317,9 @@ public class PretestModeHandler {
 
         if (remainingNeeded > 0) {
             List<int[]> fillPool = new ArrayList<>(currentLevelPairs);
+            List<Object[]> prerequisitePool = Operation.FRAC.value().equalsIgnoreCase(op)
+                    ? helper.getFullPrerequisiteChainPool(op)
+                    : List.of();
 
             for (int l = 1; l < lvl; l++) {
                 for (String b : belts) {
@@ -327,9 +330,15 @@ public class PretestModeHandler {
                 }
             }
 
-            if (!fillPool.isEmpty()) {
+            if (!fillPool.isEmpty() || !prerequisitePool.isEmpty()) {
                 ThreadLocalRandom rnd = ThreadLocalRandom.current();
                 for (int i = 0; i < remainingNeeded; i++) {
+                    if (!prerequisitePool.isEmpty() && (fillPool.isEmpty() || rnd.nextBoolean())) {
+                        Object[] entry = prerequisitePool.get(rnd.nextInt(prerequisitePool.size()));
+                        questions.add(helper.buildQuestionObject((String) entry[0], lvl,
+                                GameModeType.PRETEST.value(), (int) entry[1], (int) entry[2], "pretest", null));
+                        continue;
+                    }
                     int[] pair = fillPool.get(rnd.nextInt(fillPool.size()));
                     int a = pair[0], b = pair[1];
 

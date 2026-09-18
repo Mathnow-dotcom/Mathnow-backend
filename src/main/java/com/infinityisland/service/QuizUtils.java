@@ -17,6 +17,7 @@ public final class QuizUtils {
     public static final int COLORED_COUNT = 10;
     public static final int BLACK_COUNT = 20;
     public static final int PRETEST_COUNT = 20;
+    public static final int FRACTION_ANSWER_SCALE = 1_000;
 
     private QuizUtils() {}
 
@@ -72,6 +73,7 @@ public final class QuizUtils {
         if (Operation.SUB.value().equalsIgnoreCase(op) || "subtract".equalsIgnoreCase(op)) return a + " - " + b;
         if (Operation.MUL.value().equalsIgnoreCase(op) || "multiply".equalsIgnoreCase(op)) return a + " × " + b;
         if (Operation.DIV.value().equalsIgnoreCase(op) || "divide".equalsIgnoreCase(op)) return a + " ÷ " + b;
+        if (Operation.FRAC.value().equalsIgnoreCase(op)) return a + "/" + b;
         return a + " ? " + b;
     }
 
@@ -82,6 +84,10 @@ public final class QuizUtils {
         if (Operation.DIV.value().equalsIgnoreCase(op) || "divide".equalsIgnoreCase(op)) {
             if (b == 0) throw new IllegalArgumentException("division by zero (a=" + a + ")");
             return a / b;
+        }
+        if (Operation.FRAC.value().equalsIgnoreCase(op)) {
+            if (b == 0) throw new IllegalArgumentException("fraction denominator cannot be 0");
+            return (int) Math.round((a * (double) FRACTION_ANSWER_SCALE) / b);
         }
         return a + b;
     }
@@ -104,6 +110,9 @@ public final class QuizUtils {
      * so the child always sees meaningful options.
      */
     public static List<Integer> buildChoices(String op, int a, int b, int correct) {
+        if (Operation.FRAC.value().equalsIgnoreCase(op)) {
+            return buildFractionChoices(correct);
+        }
         if (correct == 0) {
             List<Integer> fallback = new ArrayList<>(List.of(0, 1, 2, 3));
             Collections.shuffle(fallback);
@@ -138,6 +147,40 @@ public final class QuizUtils {
         }
 
         List<Integer> choices = new ArrayList<>(s);
+        Collections.shuffle(choices);
+        return choices;
+    }
+
+    public static Map<Integer, String> fractionAnswerLabels(List<Integer> choices) {
+        Map<Integer, String> labels = new LinkedHashMap<>();
+        if (choices != null) {
+            for (Integer choice : choices) {
+                if (choice != null) labels.put(choice, formatFractionAnswer(choice));
+            }
+        }
+        return labels;
+    }
+
+    public static String formatFractionAnswer(int scaledAnswer) {
+        // The supplied Fraction curriculum specifies one-third as 0.33.
+        // Keep this learner-facing representation while retaining the precise
+        // scaled value internally for answer validation and persistence.
+        if (scaledAnswer == 333) return "0.33";
+        java.math.BigDecimal value = java.math.BigDecimal.valueOf(scaledAnswer, 3)
+                .stripTrailingZeros();
+        return value.scale() < 0 ? value.setScale(0).toPlainString() : value.toPlainString();
+    }
+
+    private static List<Integer> buildFractionChoices(int correct) {
+        int[] curriculumValues = {111, 125, 143, 167, 200, 222, 250, 286, 333, 375, 400,
+                429, 444, 500, 556, 571, 600, 625, 667, 714, 750, 778, 800, 833, 857, 875, 889};
+        LinkedHashSet<Integer> values = new LinkedHashSet<>();
+        values.add(correct);
+        for (int value : curriculumValues) {
+            if (value != correct) values.add(value);
+            if (values.size() == 4) break;
+        }
+        List<Integer> choices = new ArrayList<>(values);
         Collections.shuffle(choices);
         return choices;
     }

@@ -36,7 +36,7 @@ import static com.infinityisland.service.QuizUtils.*;
  * timer management, run lookups, and quiz summary construction.
  */
 @Service
-@DependsOn({"additionCatalogSeeder", "subtractionCatalogSeeder", "divisionCatalogSeeder",
+@DependsOn({"additionCatalogSeeder", "subtractionCatalogSeeder", "divisionCatalogSeeder", "fractionCatalogSeeder",
         "multiplicationCatalogSeeder", "multiplicationProgressResetMigration"})
 public class QuizHelper {
 
@@ -181,10 +181,16 @@ public class QuizHelper {
                 questionStringOverride != null ||
                 (a == 0 && b == 0);
 
-        if (isPractice) {
+        if (Operation.FRAC.value().equalsIgnoreCase(op)) {
+            g.setChoices(buildChoices(op, a, b, correct));
+        } else if (isPractice) {
             g.setChoices(buildPracticeChoices(correct));
         } else {
             g.setChoices(buildChoices(op, a, b, correct));
+        }
+        if (Operation.FRAC.value().equalsIgnoreCase(op)) {
+            g.setAnswerScale(FRACTION_ANSWER_SCALE);
+            g.setAnswerLabels(fractionAnswerLabels(g.getChoices()));
         }
 
         g.setSource(source);
@@ -271,9 +277,14 @@ public class QuizHelper {
         g.setParams(params);
 
         g.setQuestion(buildQuestionText(op, a, b));
-        g.setCorrectAnswer(computeAnswer(op, a, b));
+        int correct = computeAnswer(op, a, b);
+        g.setCorrectAnswer(correct);
 
         g.setChoices(List.of());
+        if (Operation.FRAC.value().equalsIgnoreCase(op)) {
+            g.setAnswerScale(FRACTION_ANSWER_SCALE);
+            g.setAnswerLabels(fractionAnswerLabels(List.of(correct)));
+        }
 
         g.setSource("surf");
         g.setSeed(UUID.randomUUID().toString());
@@ -299,7 +310,9 @@ public class QuizHelper {
         g.setParams(params);
 
         int answer = computeAnswer(op, a, b);
-        g.setQuestion(String.valueOf(answer));
+        g.setQuestion(Operation.FRAC.value().equalsIgnoreCase(op)
+                ? formatFractionAnswer(answer)
+                : String.valueOf(answer));
 
         String correctExpression = buildQuestionText(op, a, b);
         List<String> expressionChoices = buildExpressionChoices(op, a, b, answer, factPool);
@@ -337,6 +350,10 @@ public class QuizHelper {
 
         practice.setChoices(buildChoices(surfQ.getOperation(),
                 surfQ.getParams().getA(), surfQ.getParams().getB(), surfQ.getCorrectAnswer()));
+        if (Operation.FRAC.value().equalsIgnoreCase(practice.getOperation())) {
+            practice.setAnswerScale(FRACTION_ANSWER_SCALE);
+            practice.setAnswerLabels(fractionAnswerLabels(practice.getChoices()));
+        }
 
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         practice.setCreatedAt(now);
@@ -365,6 +382,10 @@ public class QuizHelper {
 
         practice.setChoices(buildChoices(bonusQ.getOperation(),
                 bonusQ.getParams().getA(), bonusQ.getParams().getB(), bonusQ.getCorrectAnswer()));
+        if (Operation.FRAC.value().equalsIgnoreCase(practice.getOperation())) {
+            practice.setAnswerScale(FRACTION_ANSWER_SCALE);
+            practice.setAnswerLabels(fractionAnswerLabels(practice.getChoices()));
+        }
 
         Instant now = Instant.now().truncatedTo(ChronoUnit.MILLIS);
         practice.setCreatedAt(now);

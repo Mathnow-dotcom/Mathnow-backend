@@ -28,6 +28,10 @@ public final class ProgressDefaults {
         divNode.put("L1", createLevelNode(1, false));
         progress.put(Operation.DIV.value(), divNode);
 
+        Map<String, Object> fractionNode = new LinkedHashMap<>();
+        fractionNode.put("L1", createLevelNode(1, false));
+        progress.put(Operation.FRAC.value(), fractionNode);
+
         return progress;
     }
 

@@ -141,6 +141,12 @@ public class GameConfig {
             divConfig.setPrerequisite(Operation.MUL.value());
             divConfig.setUnlockedByDefault(false);
             operations.put(Operation.DIV.value(), divConfig);
+
+            OperationConfig fractionConfig = new OperationConfig();
+            fractionConfig.setMaxLevel(6);
+            fractionConfig.setPrerequisite(Operation.DIV.value());
+            fractionConfig.setUnlockedByDefault(false);
+            operations.put(Operation.FRAC.value(), fractionConfig);
         }
 
         // General

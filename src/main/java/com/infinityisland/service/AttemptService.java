@@ -4,6 +4,7 @@ import com.infinityisland.dao.Attempt;
 import com.infinityisland.dao.GeneratedQuestion;
 import com.infinityisland.dao.QuizRun;
 import com.infinityisland.model.AttemptReason;
+import com.infinityisland.model.Operation;
 import com.infinityisland.repositories.AttemptRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
 
 /**
@@ -107,7 +109,7 @@ public class AttemptService {
                 // Answer data
                 .userAnswer(storedUserAnswer)
                 .correctAnswer(storedCorrectAnswer)
-                .choices(question.getChoices())
+                .choices(storedChoices(question))
                 .correct(correct)
                 .responseMs(responseMs)
 
@@ -120,6 +122,9 @@ public class AttemptService {
     }
 
     private Object storedUserAnswer(QuizRun run, GeneratedQuestion question, Integer userAnswer) {
+        if (isFractionQuestion(question)) {
+            return userAnswer == null ? null : QuizUtils.formatFractionAnswer(userAnswer);
+        }
         if (!isRocketQuestion(run, question)) return userAnswer;
         if (userAnswer == null) return null;
 
@@ -132,6 +137,9 @@ public class AttemptService {
     }
 
     private Object storedCorrectAnswer(QuizRun run, GeneratedQuestion question) {
+        if (isFractionQuestion(question)) {
+            return question.getCorrectAnswer() == null ? null : QuizUtils.formatFractionAnswer(question.getCorrectAnswer());
+        }
         if (!isRocketQuestion(run, question)) return question.getCorrectAnswer();
 
         if (question.getCorrectAnswer() == null) return null;
@@ -146,6 +154,19 @@ public class AttemptService {
     private boolean isRocketQuestion(QuizRun run, GeneratedQuestion question) {
         return (run != null && run.isRocketMode())
                 || (question != null && "rocket".equalsIgnoreCase(question.getSource()));
+    }
+
+    private List<Object> storedChoices(GeneratedQuestion question) {
+        if (question == null || question.getChoices() == null) return List.of();
+        if (!isFractionQuestion(question)) return new ArrayList<>(question.getChoices());
+        return question.getChoices().stream()
+                .map(QuizUtils::formatFractionAnswer)
+                .map(value -> (Object) value)
+                .toList();
+    }
+
+    private boolean isFractionQuestion(GeneratedQuestion question) {
+        return question != null && Operation.FRAC.value().equalsIgnoreCase(question.getOperation());
     }
 
     /**
