@@ -8,12 +8,21 @@ import jakarta.ws.rs.core.*;
 import org.springframework.stereotype.Component;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 @Component
 @Path("/admin/assessments")
 @Produces(MediaType.APPLICATION_JSON)
 public class AssessmentAdminResource {
+    private static final DateTimeFormatter CSV_TIMESTAMP = DateTimeFormatter
+        .ofPattern("uuuu-MM-dd HH:mm:ss XXX", Locale.ROOT)
+        .withZone(ZoneId.of("America/Los_Angeles"));
+
+    static String csvTimestamp(Date value) {
+        return CSV_TIMESTAMP.format(value.toInstant());
+    }
     private final AssessmentService tests;
     private final GameConfigService config;
     public AssessmentAdminResource(AssessmentService tests, GameConfigService config) {
@@ -46,14 +55,14 @@ public class AssessmentAdminResource {
         var query = tests.reportQuery(student, type, from, to);
         StreamingOutput output = stream -> {
             var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-            writer.write("Attempt,Student,PIN,Test,Started UTC,Completed UTC,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms\r\n");
+            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms\r\n");
             try (var attempts = tests.export(query)) {
                 var iterator = attempts.iterator();
                 while (iterator.hasNext()) {
                     AssessmentAttempt a = iterator.next();
                     for (int i = 0; i < a.answers.size(); i++) {
                         var answer = a.answers.get(i);
-                        Object[] values = {a.id, a.studentName, a.studentPin, a.type, a.startedAt.toInstant(), a.completedAt.toInstant(),
+                        Object[] values = {a.id, a.studentName, a.studentPin, a.type, csvTimestamp(a.startedAt), csvTimestamp(a.completedAt),
                             a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
                             i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs()};
                         for (int j = 0; j < values.length; j++) {
