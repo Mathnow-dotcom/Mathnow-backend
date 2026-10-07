@@ -13,6 +13,8 @@ java {
     toolchain { languageVersion.set(JavaLanguageVersion.of(17)) }
 }
 
+tasks.named('test') { useJUnitPlatform() }
+
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-jersey")
     implementation("com.fasterxml.jackson.jakarta.rs:jackson-jakarta-rs-json-provider:2.17.2")

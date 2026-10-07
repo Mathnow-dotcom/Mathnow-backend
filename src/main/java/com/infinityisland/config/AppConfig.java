@@ -23,6 +23,8 @@ public class AppConfig extends ResourceConfig {
     public AppConfig() {
         // --- Your JAX-RS resources/filters/providers ---
         register(UserResource.class);
+        register(AssessmentResource.class);
+        register(AssessmentAdminResource.class);
         register(AuthResource.class);
         register(QuizResource.class);
         register(AdminResource.class);

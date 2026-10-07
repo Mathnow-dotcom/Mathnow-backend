@@ -1,0 +1,76 @@
+package com.infinityisland.controller;
+
+import com.infinityisland.dao.AssessmentAttempt;
+import com.infinityisland.service.AssessmentService;
+import com.infinityisland.service.GameConfigService;
+import jakarta.ws.rs.*;
+import jakarta.ws.rs.core.*;
+import org.springframework.stereotype.Component;
+import java.io.*;
+import java.nio.charset.StandardCharsets;
+import java.util.*;
+
+@Component
+@Path("/admin/assessments")
+@Produces(MediaType.APPLICATION_JSON)
+public class AssessmentAdminResource {
+    private final AssessmentService tests;
+    private final GameConfigService config;
+    public AssessmentAdminResource(AssessmentService tests, GameConfigService config) {
+        this.tests = tests; this.config = config;
+    }
+    private void admin(String pin) {
+        if (!config.isValidAdminPin(pin)) throw new ForbiddenException("Admin access required");
+    }
+
+    @GET
+    public List<Map<String, Object>> reports(@HeaderParam("x-pin") String pin, @QueryParam("student") String student,
+            @QueryParam("type") String type, @QueryParam("from") String from, @QueryParam("to") String to,
+            @DefaultValue("0") @QueryParam("page") int page) {
+        admin(pin);
+        return tests.reports(tests.reportQuery(student, type, from, to), page).stream().map(a -> {
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", a.id); row.put("student", a.studentName); row.put("pin", a.studentPin);
+            row.put("type", a.type); row.put("startedAt", a.startedAt); row.put("completedAt", a.completedAt);
+            row.put("correct", a.correctCount); row.put("count", a.items.size());
+            row.put("percent", 100.0 * a.correctCount / a.items.size());
+            row.put("totalMs", a.totalMs); row.put("answers", a.answers);
+            return row;
+        }).toList();
+    }
+
+    @GET @Path("export") @Produces("text/csv")
+    public Response export(@HeaderParam("x-pin") String pin, @QueryParam("student") String student,
+            @QueryParam("type") String type, @QueryParam("from") String from, @QueryParam("to") String to) {
+        admin(pin);
+        var query = tests.reportQuery(student, type, from, to);
+        StreamingOutput output = stream -> {
+            var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
+            writer.write("Attempt,Student,PIN,Test,Started UTC,Completed UTC,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms\r\n");
+            try (var attempts = tests.export(query)) {
+                var iterator = attempts.iterator();
+                while (iterator.hasNext()) {
+                    AssessmentAttempt a = iterator.next();
+                    for (int i = 0; i < a.answers.size(); i++) {
+                        var answer = a.answers.get(i);
+                        Object[] values = {a.id, a.studentName, a.studentPin, a.type, a.startedAt.toInstant(), a.completedAt.toInstant(),
+                            a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
+                            i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs()};
+                        for (int j = 0; j < values.length; j++) {
+                            if (j > 0) writer.write(',');
+                            writer.write(csv(values[j]));
+                        }
+                        writer.write("\r\n");
+                    }
+                }
+            }
+            writer.flush();
+        };
+        return Response.ok(output).header("Content-Disposition", "attachment; filename=mathnow-test-results.csv").build();
+    }
+    static String csv(Object value) {
+        String text = Objects.toString(value, "");
+        if (text.stripLeading().matches("^[=+@\\-].*")) text = "'" + text;
+        return "\"" + text.replace("\"", "\"\"") + "\"";
+    }
+}
