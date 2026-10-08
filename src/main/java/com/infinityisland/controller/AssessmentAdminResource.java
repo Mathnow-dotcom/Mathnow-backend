@@ -23,6 +23,17 @@ public class AssessmentAdminResource {
     static String csvTimestamp(Date value) {
         return CSV_TIMESTAMP.format(value.toInstant());
     }
+    static double averageTimeMs(AssessmentAttempt attempt) {
+        return attempt.items.isEmpty() ? 0 : (double) attempt.totalMs / attempt.items.size();
+    }
+
+    static double correctUnderTwoSecondsPercent(AssessmentAttempt attempt) {
+        if (attempt.items.isEmpty()) return 0;
+        long qualifying = attempt.answers.stream()
+            .filter(answer -> answer.correct() && answer.timeMs() >= 0 && answer.timeMs() < 2000)
+            .count();
+        return 100.0 * qualifying / attempt.items.size();
+    }
     private final AssessmentService tests;
     private final GameConfigService config;
     public AssessmentAdminResource(AssessmentService tests, GameConfigService config) {
@@ -44,6 +55,8 @@ public class AssessmentAdminResource {
             row.put("correct", a.correctCount); row.put("count", a.items.size());
             row.put("percent", 100.0 * a.correctCount / a.items.size());
             row.put("totalMs", a.totalMs); row.put("answers", a.answers);
+            row.put("averageTimeMs", averageTimeMs(a));
+            row.put("correctUnderTwoSecondsPercent", correctUnderTwoSecondsPercent(a));
             return row;
         }).toList();
     }
@@ -55,16 +68,19 @@ public class AssessmentAdminResource {
         var query = tests.reportQuery(student, type, from, to);
         StreamingOutput output = stream -> {
             var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms\r\n");
+            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent\r\n");
             try (var attempts = tests.export(query)) {
                 var iterator = attempts.iterator();
                 while (iterator.hasNext()) {
                     AssessmentAttempt a = iterator.next();
+                    double averageSeconds = averageTimeMs(a) / 1000;
+                    double fastCorrectPercent = correctUnderTwoSecondsPercent(a);
                     for (int i = 0; i < a.answers.size(); i++) {
                         var answer = a.answers.get(i);
                         Object[] values = {a.id, a.studentName, a.studentPin, a.type, csvTimestamp(a.startedAt), csvTimestamp(a.completedAt),
                             a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
-                            i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs()};
+                            i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs(),
+                            averageSeconds, fastCorrectPercent};
                         for (int j = 0; j < values.length; j++) {
                             if (j > 0) writer.write(',');
                             writer.write(csv(values[j]));
