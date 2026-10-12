@@ -23,7 +23,8 @@ class AssessmentServiceTest {
         catalogs.add(catalog("add", 99, 1));
         var pool = AssessmentService.buildPool(catalogs, "B");
         assertEquals(11, levels.length);
-        assertEquals(65, pool.size());
+        assertEquals(66, pool.size());
+        assertTrue(pool.contains(new Item(3, 2)));
         assertEquals(expected, new HashSet<>(pool));
         assertEquals(expected.size(), pool.size());
         assertFalse(pool.contains(new Item(1, 5)));
