@@ -41,41 +41,61 @@ public class AssessmentService {
     }
 
     public static List<Item> buildPool(List<Catalog> catalogs) {
+        return buildPool(catalogs, "A");
+    }
+
+    static String testType(String type) {
+        if (type == null) return "A";
+        if (!Set.of("A", "B").contains(type)) throw new BadRequestException("Invalid test type");
+        return type;
+    }
+
+    public static List<Item> buildPool(List<Catalog> catalogs, String type) {
+        String operation = "B".equals(testType(type)) ? "sub" : "add";
         Set<Item> unique = new LinkedHashSet<>();
         for (Catalog catalog : catalogs) {
-            if (!"add".equals(catalog.getOperation()) || catalog.getFacts() == null) continue;
+            if (!operation.equals(catalog.getOperation()) || catalog.getFacts() == null) continue;
             for (Catalog.Fact fact : catalog.getFacts()) {
                 if (fact.getA() == null || fact.getB() == null || fact.getA() < 0 || fact.getB() < 0)
-                    throw new IllegalStateException("Invalid addition curriculum fact");
+                    throw new IllegalStateException("Invalid curriculum fact");
                 Item item = new Item(fact.getA(), fact.getB());
-                item.result(); // Validate overflow before creating an attempt.
+                if (item.result(type) < 0) throw new IllegalStateException("Negative subtraction curriculum answer");
                 unique.add(item);
-                unique.add(new Item(item.b(), item.a()));
+                if ("add".equals(operation)) unique.add(new Item(item.b(), item.a()));
             }
         }
         return new ArrayList<>(unique);
     }
 
     public AssessmentAttempt current(String userId) {
+        return current(userId, "A");
+    }
+    public AssessmentAttempt current(String userId, String type) {
         return mongo.findOne(Query.query(Criteria.where("userId").is(userId)
-            .and("type").is("A").and("completed").is(false)), AssessmentAttempt.class);
+            .and("type").is(testType(type)).and("completed").is(false)), AssessmentAttempt.class);
     }
 
     public AssessmentAttempt start(User user, String beginKey, String session) {
+        return start(user, beginKey, session, "A");
+    }
+    public AssessmentAttempt start(User user, String beginKey, String session, String requestedType) {
+        String type = testType(requestedType);
         requireKey(beginKey); requireKey(session);
         AssessmentAttempt attempt = mongo.findOne(Query.query(Criteria.where("userId").is(user.getId())
             .and("beginKey").is(beginKey)), AssessmentAttempt.class);
-        if (attempt == null) attempt = current(user.getId());
+        if (attempt != null && !type.equals(attempt.type)) throw new BadRequestException("Request identifier belongs to another test");
+        if (attempt == null) attempt = current(user.getId(), type);
         if (attempt == null) {
             attempt = new AssessmentAttempt();
-            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is("add")), Catalog.class));
-            if (attempt.items.isEmpty()) throw new BadRequestException("Addition curriculum is not available yet");
+            attempt.type = type;
+            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is("B".equals(type) ? "sub" : "add")), Catalog.class), type);
+            if (attempt.items.isEmpty()) throw new BadRequestException("Test curriculum is not available yet");
             Collections.shuffle(attempt.items);
             attempt.userId = user.getId(); attempt.studentName = user.getName(); attempt.studentPin = user.getPin();
             attempt.beginKey = beginKey; attempt.startedAt = new Date();
             try { attempt = mongo.insert(attempt); }
             catch (DuplicateKeyException concurrentStart) {
-                attempt = current(user.getId());
+                attempt = current(user.getId(), type);
                 if (attempt == null) throw new ClientErrorException("Please retry Begin", 409);
             }
         }
@@ -106,8 +126,8 @@ public class AssessmentService {
         if ("pause".equals(action)) { a.lastTick = null; return; }
         if ("heartbeat".equals(action)) { a.lastTick = new Date(now); return; }
         Item item = a.items.get(a.position);
-        boolean correct = Long.parseLong(answer) == item.result();
-        a.answers.add(new Answer(item.problem(), answer, correct, a.questionMs));
+        boolean correct = Long.parseLong(answer) == item.result(a.type);
+        a.answers.add(new Answer(item.problem(a.type), answer, correct, a.questionMs));
         if (correct) a.correctCount++;
         a.totalMs += a.questionMs;
         a.questionMs = 0;
@@ -143,8 +163,8 @@ public class AssessmentService {
     public record StudentState(String id, String type, boolean completed, int position, int count, String problem, String nextProblem) {}
     public static StudentState student(AssessmentAttempt a) {
         return a == null ? null : new StudentState(a.id, a.type, a.completed, a.position, a.items.size(),
-            a.completed ? null : a.items.get(a.position).problem(),
-            !a.completed && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem() : null);
+            a.completed ? null : a.items.get(a.position).problem(a.type),
+            !a.completed && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem(a.type) : null);
     }
 
     public Query reportQuery(String pin, String type, String from, String to) {

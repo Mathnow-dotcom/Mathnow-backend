@@ -10,6 +10,43 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AssessmentServiceTest {
+    @Test void subtractionPoolIncludesEveryTaughtFactWithoutMirrorsOrDuplicates() throws Exception {
+        var field = SubtractionCatalogSeeder.class.getDeclaredField("SUB_FACTS");
+        field.setAccessible(true);
+        int[][][] levels = (int[][][]) field.get(null);
+        List<Catalog> catalogs = new ArrayList<>();
+        Set<Item> expected = new HashSet<>();
+        for (var level : levels) for (var pair : level) {
+            catalogs.add(catalog("sub", pair[0], pair[1]));
+            expected.add(new Item(pair[0], pair[1]));
+        }
+        catalogs.add(catalog("add", 99, 1));
+        var pool = AssessmentService.buildPool(catalogs, "B");
+        assertEquals(11, levels.length);
+        assertEquals(65, pool.size());
+        assertEquals(expected, new HashSet<>(pool));
+        assertEquals(expected.size(), pool.size());
+        assertFalse(pool.contains(new Item(1, 5)));
+        catalogs.add(catalog("sub", 20, 1));
+        assertEquals(pool.size() + 1, AssessmentService.buildPool(catalogs, "B").size());
+    }
+    @Test void subtractionUsesSameScoringRetryAndStudentPreviewFlow() {
+        var a = attempt(); a.type = "B";
+        a.items = List.of(new Item(5, 2), new Item(3, 3));
+        assertEquals("5 - 2", AssessmentService.student(a).problem());
+        assertEquals("3 - 3", AssessmentService.student(a).nextProblem());
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "3", 2000);
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "3", 2500);
+        assertEquals(1, a.correctCount); assertEquals(1, a.position);
+        assertEquals("5 - 2", a.answers.get(0).problem());
+        AssessmentService.applyUpdate(a, "tab-one", 1, "answer", "0", 3000);
+        assertTrue(a.completed); assertEquals(2, a.correctCount);
+    }
+    @Test void onlySupportedTestTypesAreAccepted() {
+        assertEquals("A", AssessmentService.testType(null));
+        assertEquals("B", AssessmentService.testType("B"));
+        assertThrows(jakarta.ws.rs.BadRequestException.class, () -> AssessmentService.testType("C"));
+    }
     private Catalog catalog(String op, int a, int b) {
         Catalog c = new Catalog(); c.setOperation(op);
         Catalog.Fact f = new Catalog.Fact(); f.setA(a); f.setB(b);
