@@ -4,6 +4,17 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AssessmentResourceTest {
+    @Test void threeSecondMetricExcludesBoundaryAndIncorrectAnswers() {
+        var a = new com.infinityisland.dao.AssessmentAttempt();
+        for (int i = 0; i < 4; i++) a.items.add(new com.infinityisland.dao.AssessmentAttempt.Item(i, 1));
+        a.answers = java.util.List.of(
+            new com.infinityisland.dao.AssessmentAttempt.Answer("0 + 1", "1", true, 2999),
+            new com.infinityisland.dao.AssessmentAttempt.Answer("1 + 1", "2", true, 3000),
+            new com.infinityisland.dao.AssessmentAttempt.Answer("2 + 1", "0", false, 1000),
+            new com.infinityisland.dao.AssessmentAttempt.Answer("3 + 1", "4", true, 2000));
+        assertEquals(50.0, AssessmentAdminResource.correctUnderSecondsPercent(a, 3000));
+        assertEquals("", AssessmentAdminResource.csvTimestamp(null));
+    }
     @Test void reportMetricsUseAllItemsAndStrictTwoSecondThreshold() {
         var attempt = new com.infinityisland.dao.AssessmentAttempt();
         assertEquals(0.0, AssessmentAdminResource.averageTimeMs(attempt));

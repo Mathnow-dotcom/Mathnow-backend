@@ -24,5 +24,9 @@ public class AssessmentAttempt {
         public String problem(String type) { return "B".equals(type) ? a + " - " + b : problem(); }
         public int result(String type) { return "B".equals(type) ? Math.subtractExact(a, b) : result(); }
     }
-    public record Answer(String problem, String answer, boolean correct, long timeMs) {}
+    public record Answer(String problem, String answer, boolean correct, long timeMs, Date answeredAt) {
+        public Answer(String problem, String answer, boolean correct, long timeMs) {
+            this(problem, answer, correct, timeMs, null);
+        }
+    }
 }

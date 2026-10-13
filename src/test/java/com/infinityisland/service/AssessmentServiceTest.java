@@ -10,6 +10,24 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AssessmentServiceTest {
+    @Test void answerTimestampIsRecordedOnceAndLegacyAnswersStillDeserialize() throws Exception {
+        var a = attempt();
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "3", 3000);
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "3", 9000);
+        assertEquals(new Date(3000), a.answers.get(0).answeredAt());
+        assertEquals(1, a.answers.size());
+        var legacy = new ObjectMapper().readValue(
+            "{\"problem\":\"1 + 2\",\"answer\":\"3\",\"correct\":true,\"timeMs\":1000}", AssessmentAttempt.Answer.class);
+        assertNull(legacy.answeredAt());
+        var converter = new org.springframework.data.mongodb.core.convert.MappingMongoConverter(
+            org.springframework.data.mongodb.core.convert.NoOpDbRefResolver.INSTANCE,
+            new org.springframework.data.mongodb.core.mapping.MongoMappingContext());
+        converter.afterPropertiesSet();
+        var oldDocument = new org.bson.Document("problem", "1 + 2").append("answer", "3").append("correct", true).append("timeMs", 1000L);
+        assertNull(converter.read(AssessmentAttempt.Answer.class, oldDocument).answeredAt());
+        oldDocument.append("answeredAt", new Date(3000));
+        assertEquals(new Date(3000), converter.read(AssessmentAttempt.Answer.class, oldDocument).answeredAt());
+    }
     @Test void subtractionPoolIncludesEveryTaughtFactWithoutMirrorsOrDuplicates() throws Exception {
         var field = SubtractionCatalogSeeder.class.getDeclaredField("SUB_FACTS");
         field.setAccessible(true);

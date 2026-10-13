@@ -127,7 +127,7 @@ public class AssessmentService {
         if ("heartbeat".equals(action)) { a.lastTick = new Date(now); return; }
         Item item = a.items.get(a.position);
         boolean correct = Long.parseLong(answer) == item.result(a.type);
-        a.answers.add(new Answer(item.problem(a.type), answer, correct, a.questionMs));
+        a.answers.add(new Answer(item.problem(a.type), answer, correct, a.questionMs, new Date(now)));
         if (correct) a.correctCount++;
         a.totalMs += a.questionMs;
         a.questionMs = 0;
