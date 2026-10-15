@@ -46,12 +46,16 @@ public class AssessmentService {
 
     static String testType(String type) {
         if (type == null) return "A";
-        if (!Set.of("A", "B").contains(type)) throw new BadRequestException("Invalid test type");
+        if (!Set.of("A", "B", "C").contains(type)) throw new BadRequestException("Invalid test type");
         return type;
     }
 
+    private static String operation(String type) {
+        return switch (testType(type)) { case "B" -> "sub"; case "C" -> "mul"; default -> "add"; };
+    }
+
     public static List<Item> buildPool(List<Catalog> catalogs, String type) {
-        String operation = "B".equals(testType(type)) ? "sub" : "add";
+        String operation = operation(type);
         Set<Item> unique = new LinkedHashSet<>();
         for (Catalog catalog : catalogs) {
             if (!operation.equals(catalog.getOperation()) || catalog.getFacts() == null) continue;
@@ -61,7 +65,7 @@ public class AssessmentService {
                 Item item = new Item(fact.getA(), fact.getB());
                 if (item.result(type) < 0) throw new IllegalStateException("Negative subtraction curriculum answer");
                 unique.add(item);
-                if ("add".equals(operation)) unique.add(new Item(item.b(), item.a()));
+                if ("add".equals(operation) || "mul".equals(operation)) unique.add(new Item(item.b(), item.a()));
             }
         }
         return new ArrayList<>(unique);
@@ -88,7 +92,7 @@ public class AssessmentService {
         if (attempt == null) {
             attempt = new AssessmentAttempt();
             attempt.type = type;
-            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is("B".equals(type) ? "sub" : "add")), Catalog.class), type);
+            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is(operation(type))), Catalog.class), type);
             if (attempt.items.isEmpty()) throw new BadRequestException("Test curriculum is not available yet");
             Collections.shuffle(attempt.items);
             attempt.userId = user.getId(); attempt.studentName = user.getName(); attempt.studentPin = user.getPin();

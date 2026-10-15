@@ -64,7 +64,39 @@ class AssessmentServiceTest {
     @Test void onlySupportedTestTypesAreAccepted() {
         assertEquals("A", AssessmentService.testType(null));
         assertEquals("B", AssessmentService.testType("B"));
-        assertThrows(jakarta.ws.rs.BadRequestException.class, () -> AssessmentService.testType("C"));
+        assertEquals("C", AssessmentService.testType("C"));
+        assertThrows(jakarta.ws.rs.BadRequestException.class, () -> AssessmentService.testType("D"));
+    }
+    @Test void multiplicationPoolCoversCurriculumWithMirrorsAndNoDuplicates() throws Exception {
+        var field = MultiplicationCatalogSeeder.class.getDeclaredField("MUL_FACTS");
+        field.setAccessible(true);
+        List<Catalog> catalogs = new ArrayList<>();
+        Set<Item> expected = new HashSet<>();
+        for (var level : (int[][][]) field.get(null)) for (var pair : level) {
+            catalogs.add(catalog("mul", pair[0], pair[1]));
+            expected.add(new Item(pair[0], pair[1]));
+            expected.add(new Item(pair[1], pair[0]));
+        }
+        catalogs.add(catalog("add", 99, 1));
+        catalogs.add(catalog("sub", 98, 1));
+        var pool = AssessmentService.buildPool(catalogs, "C");
+        assertEquals(100, pool.size());
+        assertEquals(expected, new HashSet<>(pool));
+        catalogs.add(catalog("mul", 10, 2));
+        assertEquals(102, AssessmentService.buildPool(catalogs, "C").size());
+    }
+    @Test void multiplicationUsesScoringRetryTimestampAndCompletionFlow() {
+        var a = attempt(); a.type = "C";
+        a.items = List.of(new Item(5, 7), new Item(0, 9));
+        assertEquals("5 × 7", AssessmentService.student(a).problem());
+        assertEquals("0 × 9", AssessmentService.student(a).nextProblem());
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "35", 2000);
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "35", 2500);
+        assertEquals(1, a.position);
+        assertEquals(new Date(2000), a.answers.get(0).answeredAt());
+        assertEquals("5 × 7", a.answers.get(0).problem());
+        AssessmentService.applyUpdate(a, "tab-one", 1, "answer", "0", 3000);
+        assertTrue(a.completed); assertEquals(2, a.correctCount);
     }
     private Catalog catalog(String op, int a, int b) {
         Catalog c = new Catalog(); c.setOperation(op);
