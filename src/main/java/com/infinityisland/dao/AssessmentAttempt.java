@@ -22,9 +22,11 @@ public class AssessmentAttempt {
         public String problem() { return a + " + " + b; }
         public int result() { return Math.addExact(a, b); }
         public String problem(String type) {
+            if ("D".equals(type)) return a + " ÷ " + b;
             return "C".equals(type) ? a + " × " + b : "B".equals(type) ? a + " - " + b : problem();
         }
         public int result(String type) {
+            if ("D".equals(type)) return a / b;
             return "C".equals(type) ? Math.multiplyExact(a, b) : "B".equals(type) ? Math.subtractExact(a, b) : result();
         }
     }

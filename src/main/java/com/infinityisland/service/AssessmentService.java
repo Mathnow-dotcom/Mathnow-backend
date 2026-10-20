@@ -46,12 +46,12 @@ public class AssessmentService {
 
     static String testType(String type) {
         if (type == null) return "A";
-        if (!Set.of("A", "B", "C").contains(type)) throw new BadRequestException("Invalid test type");
+        if (!Set.of("A", "B", "C", "D").contains(type)) throw new BadRequestException("Invalid test type");
         return type;
     }
 
     private static String operation(String type) {
-        return switch (testType(type)) { case "B" -> "sub"; case "C" -> "mul"; default -> "add"; };
+        return switch (testType(type)) { case "B" -> "sub"; case "C" -> "mul"; case "D" -> "div"; default -> "add"; };
     }
 
     public static List<Item> buildPool(List<Catalog> catalogs, String type) {
@@ -63,6 +63,7 @@ public class AssessmentService {
                 if (fact.getA() == null || fact.getB() == null || fact.getA() < 0 || fact.getB() < 0)
                     throw new IllegalStateException("Invalid curriculum fact");
                 Item item = new Item(fact.getA(), fact.getB());
+                if ("div".equals(operation)) DivisionCatalogSeeder.validateDivisionFact(item.a(), item.b());
                 if (item.result(type) < 0) throw new IllegalStateException("Negative subtraction curriculum answer");
                 unique.add(item);
                 if ("add".equals(operation) || "mul".equals(operation)) unique.add(new Item(item.b(), item.a()));

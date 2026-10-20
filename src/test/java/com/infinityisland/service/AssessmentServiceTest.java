@@ -65,7 +65,43 @@ class AssessmentServiceTest {
         assertEquals("A", AssessmentService.testType(null));
         assertEquals("B", AssessmentService.testType("B"));
         assertEquals("C", AssessmentService.testType("C"));
-        assertThrows(jakarta.ws.rs.BadRequestException.class, () -> AssessmentService.testType("D"));
+        assertEquals("D", AssessmentService.testType("D"));
+        assertThrows(jakarta.ws.rs.BadRequestException.class, () -> AssessmentService.testType("E"));
+    }
+    @Test void divisionPoolContainsEveryUniqueCurriculumQuestionOnly() throws Exception {
+        var field = DivisionCatalogSeeder.class.getDeclaredField("DIV_FACTS");
+        field.setAccessible(true);
+        List<Catalog> catalogs = new ArrayList<>();
+        Set<Item> expected = new HashSet<>();
+        for (var level : (int[][][]) field.get(null)) for (var pair : level) {
+            catalogs.add(catalog("div", pair[0], pair[1]));
+            expected.add(new Item(pair[0], pair[1]));
+        }
+        catalogs.add(catalog("add", 99, 1));
+        catalogs.add(catalog("sub", 98, 1));
+        catalogs.add(catalog("mul", 97, 1));
+        var pool = AssessmentService.buildPool(catalogs, "D");
+        assertEquals(74, pool.size());
+        assertEquals(expected, new HashSet<>(pool));
+        assertFalse(pool.contains(new Item(2, 12)));
+        catalogs.add(catalog("div", 100, 10));
+        assertEquals(75, AssessmentService.buildPool(catalogs, "D").size());
+        assertThrows(IllegalStateException.class, () -> AssessmentService.buildPool(List.of(catalog("div", 5, 0)), "D"));
+        assertThrows(IllegalStateException.class, () -> AssessmentService.buildPool(List.of(catalog("div", 5, 2)), "D"));
+    }
+    @Test void divisionScoresAnswersAndPreservesRetryAndCompletionBehavior() {
+        var a = attempt(); a.type = "D";
+        a.items = List.of(new Item(35, 7), new Item(9, 3));
+        assertEquals("35 ÷ 7", AssessmentService.student(a).problem());
+        assertEquals("9 ÷ 3", AssessmentService.student(a).nextProblem());
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "5", 2000);
+        AssessmentService.applyUpdate(a, "tab-one", 0, "answer", "5", 2500);
+        assertEquals(1, a.position);
+        assertEquals(new Date(2000), a.answers.get(0).answeredAt());
+        assertEquals("35 ÷ 7", a.answers.get(0).problem());
+        AssessmentService.applyUpdate(a, "tab-one", 1, "answer", "4", 3000);
+        assertTrue(a.completed); assertEquals(1, a.correctCount);
+        assertFalse(a.answers.get(1).correct());
     }
     @Test void multiplicationPoolCoversCurriculumWithMirrorsAndNoDuplicates() throws Exception {
         var field = MultiplicationCatalogSeeder.class.getDeclaredField("MUL_FACTS");
