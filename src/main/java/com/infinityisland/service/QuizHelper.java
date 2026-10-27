@@ -39,6 +39,13 @@ import static com.infinityisland.service.QuizUtils.*;
 @DependsOn({"additionCatalogSeeder", "subtractionCatalogSeeder", "divisionCatalogSeeder", "fractionCatalogSeeder",
         "multiplicationCatalogSeeder", "multiplicationProgressResetMigration"})
 public class QuizHelper {
+    @Autowired private ProgramService program;
+    public int contentLevel(String user, String op, int level) {
+        return program.contentLevel(user, op, level);
+    }
+    public int contentLevel(QuizRun run) {
+        return contentLevel(run.getUserId(), run.getOperation(), safe(run.getLevel(), 1));
+    }
 
     private static final Logger log = LoggerFactory.getLogger(QuizHelper.class);
 
@@ -480,7 +487,11 @@ public class QuizHelper {
     }
 
     public QuizRun mustGetRun(String id) {
-        return cachedQuizRuns.findById(id).orElseThrow(() -> new IllegalArgumentException("Run not found"));
+        QuizRun run = cachedQuizRuns.findById(id).orElseThrow(() -> new IllegalArgumentException("Run not found"));
+        if (!"completed".equalsIgnoreCase(run.getStatus()))
+            program.requireRunAccess(run.getUserId(), run.getOperation(), safe(run.getLevel(), 1),
+                run.getBeltOrDegree(), run.isPretestMode());
+        return run;
     }
 
     // ===== COMPLETION CHECKS =====
@@ -541,7 +552,7 @@ public class QuizHelper {
         if (run.isPretestMode()) {
             s.pretestMode = true;
             s.gameModeType = GameModeType.PRETEST.value();
-            s.timeLimitMs = gameConfig.getPretestTimeLimitMs(run.getLevel());
+            s.timeLimitMs = gameConfig.getPretestTimeLimitMs(contentLevel(run));
         } else if (run.isSurfMode()) {
             s.gameModeType = GameModeType.SURF.value();
             s.completedSurfQuizzes = nvl(run.getCompletedSurfQuizzes(), 0);
@@ -678,7 +689,7 @@ public class QuizHelper {
         if (run.isPretestMode()) {
             out.pretestMode = true;
             out.gameModeType = GameModeType.PRETEST.value();
-            out.pretestTimeLimitMs = gameConfig.getPretestTimeLimitMs(run.getLevel());
+            out.pretestTimeLimitMs = gameConfig.getPretestTimeLimitMs(contentLevel(run));
             out.pretestQuestionCount = gameConfig.getPretestQuestionCount();
             out.gameMode = false;
         } else if (run.isSurfMode()) {
@@ -747,7 +758,7 @@ public class QuizHelper {
             out.pretestMode = true;
             out.gameModeType = GameModeType.PRETEST.value();
             out.totalTimeMs = nvl(run.getTotalActiveMs(), 0L);
-            out.timeLimitMs = gameConfig.getPretestTimeLimitMs(run.getLevel());
+            out.timeLimitMs = gameConfig.getPretestTimeLimitMs(contentLevel(run));
             out.gameMode = false;
         } else if (run.isSurfMode()) {
             out.gameMode = true;
@@ -1144,7 +1155,7 @@ public class QuizHelper {
         if (run.isPretestMode()) {
             result.put("pretestMode", true);
             result.put("gameModeType", GameModeType.PRETEST.value());
-            result.put("timeLimitMs", gameConfig.getPretestTimeLimitMs(run.getLevel()));
+            result.put("timeLimitMs", gameConfig.getPretestTimeLimitMs(contentLevel(run)));
             result.put("gameMode", false);
         } else if (run.isSurfMode()) {
             result.put("gameMode", true);

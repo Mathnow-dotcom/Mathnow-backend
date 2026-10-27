@@ -28,6 +28,7 @@ public class AssessmentService {
     // The client checkpoints every 5 seconds. A crashed/closed browser cannot add offline hours.
     static final long LEASE_MS = 15_000;
     private final MongoTemplate mongo;
+    @org.springframework.beans.factory.annotation.Autowired private ProgramService program;
     public AssessmentService(MongoTemplate mongo) { this.mongo = mongo; }
 
     @PostConstruct
@@ -38,6 +39,10 @@ public class AssessmentService {
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
             .on("userId", Sort.Direction.ASC).on("beginKey", Sort.Direction.ASC).unique());
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index().on("completedAt", Sort.Direction.DESC));
+        mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
+            .on("userId", Sort.Direction.ASC).on("programEnrollment", Sort.Direction.ASC)
+            .on("programSubject", Sort.Direction.ASC).on("programBatch", Sort.Direction.ASC)
+            .unique().partial(PartialIndexFilter.of(Criteria.where("programBatch").exists(true))));
     }
 
     public static List<Item> buildPool(List<Catalog> catalogs) {
@@ -91,9 +96,18 @@ public class AssessmentService {
         if (attempt != null && !type.equals(attempt.type)) throw new BadRequestException("Request identifier belongs to another test");
         if (attempt == null) attempt = current(user.getId(), type);
         if (attempt == null) {
+            var eligible = program.requireAssessment(user.getId(), operation(type));
             attempt = new AssessmentAttempt();
             attempt.type = type;
-            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is(operation(type))), Catalog.class), type);
+            attempt.programSubject = operation(type);
+            attempt.programEnrollment = program.assessmentEnrollment(program.get(user.getId()), eligible);
+            attempt.programBatch = eligible.batch();
+            if (eligible.curriculum().splitAddition()) {
+                attempt.programPart = eligible.curriculum().part(eligible.batch());
+                attempt.programPartBatch = eligible.curriculum().partBatch(eligible.batch());
+            }
+            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is(operation(type))
+                .and("level").in(eligible.curriculum().assessmentLevels(eligible.batch()).stream().map(String::valueOf).toList())), Catalog.class), type);
             if (attempt.items.isEmpty()) throw new BadRequestException("Test curriculum is not available yet");
             Collections.shuffle(attempt.items);
             attempt.userId = user.getId(); attempt.studentName = user.getName(); attempt.studentPin = user.getPin();
@@ -118,7 +132,9 @@ public class AssessmentService {
         if (position < 0) throw new BadRequestException("Invalid question position");
         if ("answer".equals(action) && (answer == null || !answer.matches("[0-9]{1,10}")))
             throw new BadRequestException("Enter a numeric answer (up to 10 digits)");
-        return change(userId, id, a -> applyUpdate(a, session, position, action, answer, System.currentTimeMillis()));
+        AssessmentAttempt saved = change(userId, id, a -> applyUpdate(a, session, position, action, answer, System.currentTimeMillis()));
+        if (saved.completed && saved.programBatch != null) program.refresh(userId);
+        return saved;
     }
 
     static void applyUpdate(AssessmentAttempt a, String session, int position, String action, String answer, long now) {
@@ -138,7 +154,11 @@ public class AssessmentService {
         a.questionMs = 0;
         a.position++;
         a.completed = a.position == a.items.size();
-        if (a.completed) { a.completedAt = new Date(now); a.lastTick = null; }
+        if (a.completed) {
+            a.completedAt = new Date(now); a.lastTick = null;
+            if (a.programBatch != null)
+                a.programPassed = a.correctCount == a.items.size() && a.totalMs < 3000L * a.items.size();
+        }
     }
 
     static void tick(AssessmentAttempt a, long now) {
@@ -165,11 +185,12 @@ public class AssessmentService {
         if (key == null || !key.matches("[A-Za-z0-9-]{1,80}")) throw new BadRequestException("Invalid request identifier");
     }
 
-    public record StudentState(String id, String type, boolean completed, int position, int count, String problem, String nextProblem) {}
+    public record StudentState(String id, String type, boolean completed, int position, int count, String problem, String nextProblem, Integer part, Integer partBatch) {}
     public static StudentState student(AssessmentAttempt a) {
         return a == null ? null : new StudentState(a.id, a.type, a.completed, a.position, a.items.size(),
             a.completed ? null : a.items.get(a.position).problem(a.type),
-            !a.completed && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem(a.type) : null);
+            !a.completed && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem(a.type) : null,
+            a.programPart, a.programPartBatch);
     }
 
     public Query reportQuery(String pin, String type, String from, String to) {

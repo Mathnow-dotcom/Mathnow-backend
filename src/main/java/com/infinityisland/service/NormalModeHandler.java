@@ -86,7 +86,7 @@ public class NormalModeHandler {
                 out.quizRunId = run.getId();
                 out.resumed = false;
                 out.gameMode = false;
-                out.practice = helper.buildPracticeQuestions(op, lvl, belt);
+                out.practice = helper.buildPracticeQuestions(op, helper.contentLevel(userId, op, lvl), belt);
                 return out;
             }
         }
@@ -121,7 +121,7 @@ public class NormalModeHandler {
 
         cachedQuizRuns.save(run);
 
-        List<GeneratedQuestion> practice = helper.buildPracticeQuestions(op, lvl, belt);
+        List<GeneratedQuestion> practice = helper.buildPracticeQuestions(op, helper.contentLevel(userId, op, lvl), belt);
 
         PrepareResponse out = new PrepareResponse();
         out.quizRunId = run.getId();
@@ -245,7 +245,7 @@ public class NormalModeHandler {
 
     public List<GeneratedQuestion> buildQuizSet(QuizRun run) {
         String belt = nvl(run.getBeltOrDegree(), Belt.WHITE.value());
-        int lvl = safe(run.getLevel(), 1);
+        int lvl = helper.contentLevel(run);
         String op = nvl(run.getOperation(), Operation.ADD.value());
 
         List<GeneratedQuestion> questions = new ArrayList<>();
@@ -336,7 +336,7 @@ public class NormalModeHandler {
     }
 
     private List<GeneratedQuestion> buildBlackBeltQuiz(QuizRun run) {
-        int lvl = safe(run.getLevel(), 1);
+        int lvl = helper.contentLevel(run);
         String belt = nvl(run.getBeltOrDegree(), "black-1");
         String op = nvl(run.getOperation(), Operation.ADD.value());
 

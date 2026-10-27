@@ -115,7 +115,7 @@ public class LightningModeHandler {
             throw e;
         }
 
-        List<GeneratedQuestion> practice = helper.buildPracticeQuestions(op, lvl, belt);
+        List<GeneratedQuestion> practice = helper.buildPracticeQuestions(op, helper.contentLevel(userId, op, lvl), belt);
 
         PrepareResponse out = new PrepareResponse();
         out.quizRunId = run.getId();

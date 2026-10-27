@@ -310,7 +310,7 @@ public class SurfModeHandler {
 
     public List<GeneratedQuestion> buildSurfQuizSet(QuizRun run) {
         String belt = nvl(run.getBeltOrDegree(), Belt.WHITE.value());
-        int lvl = safe(run.getLevel(), 1);
+        int lvl = helper.contentLevel(run);
         String op = nvl(run.getOperation(), Operation.ADD.value());
 
         List<GeneratedQuestion> questions = new ArrayList<>();

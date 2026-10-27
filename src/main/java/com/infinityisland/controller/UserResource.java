@@ -20,6 +20,14 @@ import java.util.Map;
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 public class UserResource {
+  @org.springframework.beans.factory.annotation.Autowired private com.infinityisland.service.ProgramService program;
+
+  @GET @Path("/program")
+  public Object program(@HeaderParam("x-pin") String pin) {
+    String id = pinUserResolver.ensureUserId(pin);
+    if (id == null) throw new NotAuthorizedException("PIN required");
+    return program.view(id);
+  }
 
   private final UserService users;
   private final GameConfigService gameConfig;
@@ -113,12 +121,16 @@ public class UserResource {
   @Path("/operations")
   public Response operations(@HeaderParam("x-pin") String pin) {
     String userId = pinUserResolver.ensureUserId(pin);
+    if (userId == null) throw new NotAuthorizedException("PIN required");
+    program.refresh(userId);
     Map<String, Object> ops = new LinkedHashMap<>();
     for (Map.Entry<String, GameConfig.OperationConfig> entry : gameConfig.getAllOperationConfigs().entrySet()) {
       String op = entry.getKey();
       Map<String, Object> info = new LinkedHashMap<>();
-      info.put("maxLevel", gameConfig.getMaxLevel(op));
+      info.put("maxLevel", program.managed(op) ? program.visibleMax(userId, op) : gameConfig.getMaxLevel(op));
       info.put("enabled", gameConfig.isOperationEnabled(op));
+      if (program.managed(op)) info.put("batchSize", program.batchSize(userId, op));
+      if ("add".equals(op)) info.put("contentLevels", program.contentLevels(userId, op));
       info.put("unlocked", progression.isOperationUnlocked(userId, op));
       info.put("prerequisite", gameConfig.getOperationPrerequisite(op));
       ops.put(op, info);

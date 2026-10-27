@@ -69,7 +69,7 @@ public class PretestModeHandler {
             out.wrong = nvl(run.getWrong(), 0);
             out.level = run.getLevel();
             out.operation = run.getOperation();
-            out.pretestTimeLimitMs = gameConfig.getPretestTimeLimitMs(run.getLevel());
+            out.pretestTimeLimitMs = gameConfig.getPretestTimeLimitMs(helper.contentLevel(run));
             out.pretestQuestionCount = gameConfig.getPretestQuestionCount();
             out.practice = List.of();
             return out;
@@ -97,7 +97,7 @@ public class PretestModeHandler {
         run.setUpdatedAt(now);
 
         helper.ensureTimer(run);
-        long timeLimitMs = gameConfig.getPretestTimeLimitMs(lvl);
+        long timeLimitMs = gameConfig.getPretestTimeLimitMs(helper.contentLevel(userId, op, lvl));
         helper.timerSetLimit(run, timeLimitMs);
         helper.timerSetRemaining(run, timeLimitMs);
 
@@ -118,7 +118,7 @@ public class PretestModeHandler {
                 out.wrong = nvl(existingRun.getWrong(), 0);
                 out.level = existingRun.getLevel();
                 out.operation = existingRun.getOperation();
-                out.pretestTimeLimitMs = gameConfig.getPretestTimeLimitMs(existingRun.getLevel());
+                out.pretestTimeLimitMs = gameConfig.getPretestTimeLimitMs(helper.contentLevel(existingRun));
                 out.pretestQuestionCount = gameConfig.getPretestQuestionCount();
                 out.practice = List.of();
                 return out;
@@ -126,7 +126,7 @@ public class PretestModeHandler {
             throw e;
         }
 
-        List<GeneratedQuestion> practice = helper.buildPretestPracticeQuestions(op, lvl);
+        List<GeneratedQuestion> practice = helper.buildPretestPracticeQuestions(op, helper.contentLevel(userId, op, lvl));
 
         PrepareResponse out = new PrepareResponse();
         out.quizRunId = run.getId();
@@ -218,7 +218,7 @@ public class PretestModeHandler {
         helper.pauseTimer(run);
 
         boolean noErrors = nvl(run.getWrong(), 0) == 0;
-        long timeLimit = gameConfig.getPretestTimeLimitMs(run.getLevel());
+        long timeLimit = gameConfig.getPretestTimeLimitMs(helper.contentLevel(run));
         long totalTime = nvl(run.getTotalActiveMs(), 0L);
         boolean withinTimeLimit = totalTime <= timeLimit;
         boolean passed = noErrors && withinTimeLimit;
@@ -276,7 +276,7 @@ public class PretestModeHandler {
     }
 
     public List<GeneratedQuestion> buildPretestQuizSet(QuizRun run) {
-        int lvl = safe(run.getLevel(), 1);
+        int lvl = helper.contentLevel(run);
         String op = nvl(run.getOperation(), Operation.ADD.value());
 
         int totalQuestions = gameConfig.getPretestQuestionCount();

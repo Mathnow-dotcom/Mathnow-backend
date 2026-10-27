@@ -15,6 +15,11 @@ public class AssessmentAttempt {
     public Date startedAt, completedAt, lastTick;
     public int position, correctCount;
     public long totalMs, questionMs;
+    public String programSubject;
+    public String programEnrollment;
+    public Integer programBatch;
+    public Integer programPart, programPartBatch;
+    public Boolean programPassed;
     public List<Item> items = new ArrayList<>();
     public List<Answer> answers = new ArrayList<>();
 

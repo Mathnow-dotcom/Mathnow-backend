@@ -18,6 +18,7 @@ import java.util.*;
 
 @Service
 public class UserService {
+    @org.springframework.beans.factory.annotation.Autowired private ProgramService program;
 
     private static final Logger log = LoggerFactory.getLogger(UserService.class);
 
@@ -58,6 +59,7 @@ public class UserService {
         }
 
         User u = new User();
+        u.setIntegratedEnrollment(true);
         u.setPin(pin);
         if (name != null && !name.isBlank()) {
             u.setName(name);
@@ -92,6 +94,7 @@ public class UserService {
 
     public ProgressResponse getProgress(String pin) {
         User u = ensureUserByPin(pin);
+        program.get(u.getId());
 
         Map<String, Object> p = u.getProgress();
         if (p == null || p.isEmpty()) {
@@ -128,7 +131,7 @@ public class UserService {
         }
 
         ProgressResponse resp = new ProgressResponse();
-        resp.progress = p;
+        resp.progress = program.project(u.getId(), p);
         return resp;
     }
 
@@ -167,6 +170,7 @@ public class UserService {
         boolean updated = false;
         for (Map.Entry<String, Object> opEntry : progress.entrySet()) {
             String op = opEntry.getKey();
+            if (program.managed(op)) continue;
             if (!(opEntry.getValue() instanceof Map)) continue;
             int maxLevel = gameConfig.getMaxLevel(op);
             if (maxLevel <= 0) continue;
@@ -197,6 +201,7 @@ public class UserService {
         boolean updated = false;
         for (Map.Entry<String, GameConfig.OperationConfig> entry : gameConfig.getAllOperationConfigs().entrySet()) {
             String op = entry.getKey().toLowerCase(Locale.ROOT);
+            if (program.managed(op)) continue;
             int maxLevel = gameConfig.getMaxLevel(op);
             if (maxLevel <= 1) continue;
 
@@ -248,6 +253,7 @@ public class UserService {
         boolean updated = false;
         for (Map.Entry<String, GameConfig.OperationConfig> entry : gameConfig.getAllOperationConfigs().entrySet()) {
             String op = entry.getKey().toLowerCase(Locale.ROOT);
+            if (program.managed(op)) continue;
             String prereq = entry.getValue().getPrerequisite();
             if (prereq == null) continue;
 
@@ -366,7 +372,9 @@ public class UserService {
         u.setProgress(baselineProgress());
         u.setGrandTotalCorrect(0L);
         u.setCurrentStreak(0);
+        u.setIntegratedEnrollment(true);
         cachedUsers.save(u);
+        program.archiveForAdminChange(userId);
 
         return Map.of(
                 "success", true,
@@ -434,7 +442,9 @@ public class UserService {
         u.setProgress(progress);
         if (grandTotalCorrect != null) u.setGrandTotalCorrect(grandTotalCorrect);
         if (currentStreak != null) u.setCurrentStreak(currentStreak);
+        u.setIntegratedEnrollment(false); // Explicit admin restore preserves the supplied legacy access.
         cachedUsers.save(u);
+        program.archiveForAdminChange(u.getId());
 
         log.info("[RESTORE] Restored user {} (pin={}): {}, grandTotalCorrect={}, currentStreak={}",
                 u.getDisplayName(), pin, completedLevelsPerOp, grandTotalCorrect, currentStreak);
@@ -525,6 +535,7 @@ public class UserService {
         return cachedUsers.findByPin(pin)
                 .orElseGet(() -> {
                     User u = new User();
+                    u.setIntegratedEnrollment(true);
                     u.setPin(pin);
                     u.setDisplayName("PIN " + pin);
                     u.setProgress(baselineProgress());
@@ -553,6 +564,7 @@ public class UserService {
         ratings.deleteByUserId(userId);
 
         // Delete user and evict from caches
+        program.archiveForAdminChange(userId);
         cachedUsers.evict(userId);
         cachedUsers.evictByPin(pin);
         cachedUsers.delete(u);

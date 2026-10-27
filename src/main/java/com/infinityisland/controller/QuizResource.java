@@ -51,6 +51,8 @@ public class QuizResource {
   } catch (IllegalArgumentException e) {
    log.error("[ERROR] Prepare validation failed: {}", e.getMessage(), e);
    return Response.status(400).entity(ErrorResponse.of(e.getMessage())).build();
+  } catch (jakarta.ws.rs.WebApplicationException e) {
+   throw e;
   } catch (Exception e) {
    log.error("[ERROR] Prepare failed: {}", e.getMessage(), e);
    return Response.status(500).entity(ErrorResponse.of(e.getMessage())).build();
@@ -59,13 +61,16 @@ public class QuizResource {
 
  @POST
  @Path("/start")
- public Object start(QuizDtos.StartRequest body) {
+ public Object start(@HeaderParam("x-pin") String pin, QuizDtos.StartRequest body) {
   try {
+   quiz.requireOwner(pinUserResolver.ensureUserId(pin), body.quizRunId());
    return Response.ok(quiz.start(body.quizRunId())).build();
 
   } catch (IllegalArgumentException e) {
    log.error("[ERROR] Start validation failed: {}", e.getMessage(), e);
    return Response.status(400).entity(ErrorResponse.of(e.getMessage())).build();
+  } catch (jakarta.ws.rs.WebApplicationException e) {
+   throw e;
   } catch (Exception e) {
    log.error("[ERROR] Start failed: {}", e.getMessage(), e);
    return Response.status(500).entity(ErrorResponse.of(e.getMessage())).build();
@@ -74,14 +79,17 @@ public class QuizResource {
 
  @POST
  @Path("/answer")
- public Object answer(QuizDtos.AnswerRequest body) {
+ public Object answer(@HeaderParam("x-pin") String pin, QuizDtos.AnswerRequest body) {
   try {
+   quiz.requireOwner(pinUserResolver.ensureUserId(pin), body.quizRunId());
    int answer = body.answer() != null ? body.answer() : 0;
    long ms = body.responseMs() != null ? body.responseMs() : 0L;
    Boolean forcePass = body.forcePass() != null && body.forcePass();
    Boolean skipLevelAward = body.skipLevelAward() != null && body.skipLevelAward();
    return quiz.answer(body.quizRunId(), body.questionId(), answer, ms, forcePass, skipLevelAward);
 
+  } catch (jakarta.ws.rs.WebApplicationException e) {
+   throw e;
   } catch (Exception e) {
    log.error("[ERROR] Answer failed: {}", e.getMessage(), e);
    return ErrorResponse.of(e.getMessage());
@@ -90,11 +98,14 @@ public class QuizResource {
 
  @POST
  @Path("/practice/answer")
- public Object practiceAnswer(QuizDtos.PracticeAnswerRequest body) {
+ public Object practiceAnswer(@HeaderParam("x-pin") String pin, QuizDtos.PracticeAnswerRequest body) {
   try {
+   quiz.requireOwner(pinUserResolver.ensureUserId(pin), body.quizRunId());
    int answer = body.answer() != null ? body.answer() : 0;
    return quiz.practiceAnswer(body.quizRunId(), body.questionId(), answer);
 
+  } catch (jakarta.ws.rs.WebApplicationException e) {
+   throw e;
   } catch (Exception e) {
    log.error("[ERROR] Practice answer failed: {}", e.getMessage(), e);
    return ErrorResponse.of(e.getMessage());
@@ -103,10 +114,13 @@ public class QuizResource {
 
  @POST
  @Path("/inactivity")
- public Object inactivity(QuizDtos.InactivityRequest body) {
+ public Object inactivity(@HeaderParam("x-pin") String pin, QuizDtos.InactivityRequest body) {
   try {
+   quiz.requireOwner(pinUserResolver.ensureUserId(pin), body.quizRunId());
    return quiz.inactivity(body.quizRunId(), body.questionId());
 
+  } catch (jakarta.ws.rs.WebApplicationException e) {
+   throw e;
   } catch (Exception e) {
    log.error("[ERROR] Inactivity failed: {}", e.getMessage(), e);
    return ErrorResponse.of(e.getMessage());
@@ -115,10 +129,13 @@ public class QuizResource {
 
  @POST
  @Path("/complete")
- public Object complete(QuizDtos.CompleteRequest body) {
+ public Object complete(@HeaderParam("x-pin") String pin, QuizDtos.CompleteRequest body) {
   try {
+   quiz.requireOwner(pinUserResolver.ensureUserId(pin), body.quizRunId());
    return quiz.complete(body.quizRunId());
 
+  } catch (jakarta.ws.rs.WebApplicationException e) {
+   throw e;
   } catch (Exception e) {
    log.error("[ERROR] Complete failed: {}", e.getMessage(), e);
    return ErrorResponse.of(e.getMessage());

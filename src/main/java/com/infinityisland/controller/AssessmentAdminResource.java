@@ -16,6 +16,12 @@ import java.util.*;
 @Path("/admin/assessments")
 @Produces(MediaType.APPLICATION_JSON)
 public class AssessmentAdminResource {
+    @org.springframework.beans.factory.annotation.Autowired private com.infinityisland.service.ProgramService program;
+    @GET @Path("progress")
+    public Object progress(@HeaderParam("x-pin") String pin, @QueryParam("student") String student) {
+        admin(pin);
+        return program.report(student);
+    }
     private static final DateTimeFormatter CSV_TIMESTAMP = DateTimeFormatter
         .ofPattern("uuuu-MM-dd HH:mm:ss XXX", Locale.ROOT)
         .withZone(ZoneId.of("America/Los_Angeles"));
@@ -61,6 +67,11 @@ public class AssessmentAdminResource {
             row.put("averageTimeMs", averageTimeMs(a));
             row.put("correctUnderTwoSecondsPercent", correctUnderTwoSecondsPercent(a));
             row.put("correctUnderThreeSecondsPercent", correctUnderSecondsPercent(a, 3000));
+            row.put("batch", a.programBatch);
+            row.put("part", a.programPart);
+            row.put("partBatch", a.programPartBatch);
+            row.put("attemptNumber", a.programBatch);
+            row.put("passed", a.programPassed);
             return row;
         }).toList();
     }
@@ -72,7 +83,7 @@ public class AssessmentAdminResource {
         var query = tests.reportQuery(student, type, from, to);
         StreamingOutput output = stream -> {
             var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent,Correct under 3 seconds percent,Answered at America/Los_Angeles\r\n");
+            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent,Correct under 3 seconds percent,Answered at America/Los_Angeles,Batch,Passed,Addition part,Part batch\r\n");
             try (var attempts = tests.export(query)) {
                 var iterator = attempts.iterator();
                 while (iterator.hasNext()) {
@@ -85,7 +96,8 @@ public class AssessmentAdminResource {
                         Object[] values = {a.id, a.studentName, a.studentPin, a.type, csvTimestamp(a.startedAt), csvTimestamp(a.completedAt),
                             a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
                             i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs(),
-                            averageSeconds, fastCorrectPercent, underThreePercent, csvTimestamp(answer.answeredAt())};
+                            averageSeconds, fastCorrectPercent, underThreePercent, csvTimestamp(answer.answeredAt()),
+                            a.programBatch, a.programPassed, a.programPart, a.programPartBatch};
                         for (int j = 0; j < values.length; j++) {
                             if (j > 0) writer.write(',');
                             writer.write(csv(values[j]));

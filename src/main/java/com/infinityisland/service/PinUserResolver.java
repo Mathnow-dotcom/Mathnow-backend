@@ -28,6 +28,7 @@ public class PinUserResolver {
         }
 
         var u = new User();
+        u.setIntegratedEnrollment(true);
         u.setPin(pin);
         u.setDisplayName("PIN " + pin);
         cachedUsers.save(u);

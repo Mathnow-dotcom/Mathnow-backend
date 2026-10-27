@@ -28,6 +28,7 @@ public class QuizService {
 
     @Autowired private QuizHelper helper;
     @Autowired private ProgressionService progression;
+    @Autowired private ProgramService program;
     @Autowired private GameConfigService gameConfig;
     @Autowired private SurfModeHandler surfHandler;
     @Autowired private RocketModeHandler rocketHandler;
@@ -54,13 +55,16 @@ public class QuizService {
             throw new IllegalArgumentException("beltOrDegree is required");
         }
 
-        PrepareResponse resume = helper.findActiveGameModeResume(userId);
-        if (resume != null) return resume;
-
         boolean isGameMode = Boolean.TRUE.equals(gameMode);
-        String op = nvl(operation, Operation.ADD.value());
+        String op = nvl(operation, Operation.ADD.value()).toLowerCase(Locale.ROOT);
         String belt = nvl(beltOrDegree, "white");
         int lvl = safe(level, 1);
+        program.requireLearning(userId, op, lvl);
+        PrepareResponse resume = helper.findActiveGameModeResume(userId);
+        if (resume != null) {
+            helper.mustGetRun(resume.quizRunId);
+            return resume;
+        }
 
         if (!gameConfig.isOperationEnabled(op)) {
             throw new IllegalStateException("Operation '" + op + "' is not currently available.");
@@ -75,6 +79,7 @@ public class QuizService {
         boolean isBonusMode = GameModeType.BONUS.value().equals(modeType);
         boolean isLightningMode = isGameMode && !isSurfMode && !isRocketMode && !isBonusMode;
         boolean isPretestMode = GameModeType.PRETEST.value().equals(modeType);
+        if (!isPretestMode) program.requireBelt(userId, op, lvl, belt);
 
         if (!isPretestMode && !isGameMode && progression.isPretestRequired(userId, op, lvl)) {
             log.info("[PRETEST] Pretest required for user {} at level {} operation {}", userId, lvl, op);
@@ -90,6 +95,12 @@ public class QuizService {
     }
 
     // ===== START =====
+
+    public void requireOwner(String userId, String runId) {
+        QuizRun run = cachedQuizRuns.findById(runId).orElseThrow(() -> new jakarta.ws.rs.NotFoundException("Run not found"));
+        if (userId == null || !userId.equals(run.getUserId()))
+            throw new jakarta.ws.rs.ForbiddenException("Run does not belong to this student");
+    }
 
     public Object start(String quizRunId) {
         QuizRun run = helper.mustGetRun(quizRunId);
@@ -165,6 +176,7 @@ public class QuizService {
         }
 
         if (Boolean.TRUE.equals(forcePass)) {
+            if (program.managed(run.getOperation())) throw new IllegalArgumentException("Assessment progression cannot be bypassed");
             return helper.handleForcePass(run, responseMs, Boolean.TRUE.equals(skipLevelAward));
         }
 

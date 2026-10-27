@@ -10,6 +10,9 @@ import java.util.Map;
 
 @Document("users")
 public class User {
+    private Boolean integratedEnrollment;
+    public Boolean getIntegratedEnrollment() { return integratedEnrollment; }
+    public void setIntegratedEnrollment(Boolean value) { integratedEnrollment = value; }
 
     @Id
     private String id;

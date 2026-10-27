@@ -414,7 +414,7 @@ public class BonusModeHandler {
      */
     public List<GeneratedQuestion> buildBonusQuizSet(QuizRun run) {
         String belt = nvl(run.getBeltOrDegree(), Belt.WHITE.value());
-        int lvl = safe(run.getLevel(), 1);
+        int lvl = helper.contentLevel(run);
         String op = nvl(run.getOperation(), Operation.ADD.value());
         int batchSize = gameConfig.getBonusQuestionsPerBatch();
 

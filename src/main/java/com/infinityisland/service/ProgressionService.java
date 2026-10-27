@@ -13,6 +13,7 @@ import java.util.*;
 
 @Service
 public class ProgressionService {
+    @org.springframework.beans.factory.annotation.Autowired private ProgramService program;
 
     private static final Logger log = LoggerFactory.getLogger(ProgressionService.class);
 
@@ -62,7 +63,7 @@ public class ProgressionService {
 
             if (degree >= 7) {
                 levelNode.put("completed", true);
-                int maxLevel = gameConfig.getMaxLevel(op);
+                int maxLevel = program.managed(op) ? program.visibleMax(userId, op) : gameConfig.getMaxLevel(op);
                 if (maxLevel > 0) {
                     int nextLevel = level + 1;
                     if (nextLevel <= maxLevel) {
@@ -72,7 +73,7 @@ public class ProgressionService {
                         whiteNext.put("unlocked", true);
                     } else {
                         // Last level of this operation completed — unlock dependent operations
-                        unlockDependentOperations(progress, op);
+                        if (!program.managed(op)) unlockDependentOperations(progress, op);
                     }
                 }
             }
@@ -196,7 +197,7 @@ public class ProgressionService {
 
         levelNode.put("completed", true);
 
-        int maxLevel = gameConfig.getMaxLevel(op);
+        int maxLevel = program.managed(op) ? program.visibleMax(userId, op) : gameConfig.getMaxLevel(op);
         if (maxLevel > 0) {
             int nextLevel = level + 1;
             if (nextLevel <= maxLevel) {
@@ -206,7 +207,7 @@ public class ProgressionService {
                 whiteNext.put("unlocked", true);
             } else {
                 // Last level of this operation completed — unlock dependent operations
-                unlockDependentOperations(progress, op);
+                if (!program.managed(op)) unlockDependentOperations(progress, op);
             }
         }
 
@@ -229,6 +230,7 @@ public class ProgressionService {
 
         // Disabled operations are never unlocked
         if (gameConfig.getMaxLevel(op) <= 0) return false;
+        if (program.managed(op)) return userId != null && program.unlocked(userId, op);
 
         String prerequisite = gameConfig.getOperationPrerequisite(op);
         if (prerequisite == null) return true; // No prerequisite, always unlocked
@@ -242,6 +244,10 @@ public class ProgressionService {
         if (progress == null) return false;
 
         progress = migrateIfNeeded(progress);
+        if ("frac".equals(op) && !Boolean.TRUE.equals(userOpt.get().getIntegratedEnrollment()) &&
+            progress.get(op) instanceof Map<?,?> fractions && fractions.values().stream().anyMatch(n ->
+                n instanceof Map<?,?> level && (Boolean.TRUE.equals(level.get("unlocked")) ||
+                    Boolean.TRUE.equals(level.get("completed"))))) return true;
         return isOperationCompleted(progress, prerequisite);
     }
 
