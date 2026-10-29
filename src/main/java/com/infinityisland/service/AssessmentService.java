@@ -33,9 +33,20 @@ public class AssessmentService {
 
     @PostConstruct
     public void indexes() {
+        // Idempotently classify unfinished records only; historical results stay untouched.
+        mongo.updateMulti(Query.query(Criteria.where("completed").is(false).and("programBatch").ne(null)),
+            new org.springframework.data.mongodb.core.query.Update().set("flow", "learning"), AssessmentAttempt.class);
+        mongo.updateMulti(Query.query(Criteria.where("completed").is(false).and("programBatch").is(null)),
+            new org.springframework.data.mongodb.core.query.Update().set("flow", "legacy"), AssessmentAttempt.class);
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
-            .on("userId", Sort.Direction.ASC).on("type", Sort.Direction.ASC).unique()
+            .on("userId", Sort.Direction.ASC).on("type", Sort.Direction.ASC).on("flow", Sort.Direction.ASC).unique()
+            .named("active_assessment_per_flow")
             .partial(PartialIndexFilter.of(Criteria.where("completed").is(false))));
+        // Install the replacement constraint before removing the former cross-flow constraint.
+        for (var index : mongo.indexOps(AssessmentAttempt.class).getIndexInfo()) {
+            if (index.isUnique() && index.getIndexFields().stream().map(f -> f.getKey()).toList().equals(List.of("userId", "type")))
+                mongo.indexOps(AssessmentAttempt.class).dropIndex(index.getName());
+        }
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
             .on("userId", Sort.Direction.ASC).on("beginKey", Sort.Direction.ASC).unique());
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index().on("completedAt", Sort.Direction.DESC));
@@ -81,40 +92,62 @@ public class AssessmentService {
         return current(userId, "A");
     }
     public AssessmentAttempt current(String userId, String type) {
-        return mongo.findOne(Query.query(Criteria.where("userId").is(userId)
-            .and("type").is(testType(type)).and("completed").is(false)), AssessmentAttempt.class);
+        return current(userId, type, "learning");
+    }
+    static String testFlow(String flow) {
+        if (flow == null) return "learning"; // Existing clients keep their learning semantics.
+        if (!Set.of("learning", "legacy").contains(flow)) throw new BadRequestException("Invalid test flow");
+        return flow;
+    }
+    public AssessmentAttempt current(String userId, String type, String requestedFlow) {
+        String flow = testFlow(requestedFlow);
+        Criteria criteria = Criteria.where("userId").is(userId)
+            .and("type").is(testType(type)).and("completed").is(false);
+        if ("legacy".equals(flow)) criteria.and("programBatch").is(null);
+        else criteria.and("programBatch").ne(null);
+        return mongo.findOne(Query.query(criteria), AssessmentAttempt.class);
     }
 
     public AssessmentAttempt start(User user, String beginKey, String session) {
         return start(user, beginKey, session, "A");
     }
     public AssessmentAttempt start(User user, String beginKey, String session, String requestedType) {
+        return start(user, beginKey, session, requestedType, "learning");
+    }
+    public AssessmentAttempt start(User user, String beginKey, String session, String requestedType, String requestedFlow) {
         String type = testType(requestedType);
+        String flow = testFlow(requestedFlow);
         requireKey(beginKey); requireKey(session);
         AssessmentAttempt attempt = mongo.findOne(Query.query(Criteria.where("userId").is(user.getId())
             .and("beginKey").is(beginKey)), AssessmentAttempt.class);
         if (attempt != null && !type.equals(attempt.type)) throw new BadRequestException("Request identifier belongs to another test");
-        if (attempt == null) attempt = current(user.getId(), type);
+        if (attempt != null && !flow.equals(attempt.programBatch == null ? "legacy" : "learning"))
+            throw new BadRequestException("Request identifier belongs to another test flow");
+        if (attempt == null) attempt = current(user.getId(), type, flow);
         if (attempt == null) {
-            var eligible = program.requireAssessment(user.getId(), operation(type));
+            var eligible = "learning".equals(flow) ? program.requireAssessment(user.getId(), operation(type)) : null;
             attempt = new AssessmentAttempt();
             attempt.type = type;
-            attempt.programSubject = operation(type);
-            attempt.programEnrollment = program.assessmentEnrollment(program.get(user.getId()), eligible);
-            attempt.programBatch = eligible.batch();
-            if (eligible.curriculum().splitAddition()) {
-                attempt.programPart = eligible.curriculum().part(eligible.batch());
-                attempt.programPartBatch = eligible.curriculum().partBatch(eligible.batch());
+            attempt.flow = flow;
+            if (eligible != null) {
+                attempt.programSubject = operation(type);
+                attempt.programEnrollment = program.assessmentEnrollment(program.get(user.getId()), eligible);
+                attempt.programBatch = eligible.batch();
+                if (eligible.curriculum().splitAddition()) {
+                    attempt.programPart = eligible.curriculum().part(eligible.batch());
+                    attempt.programPartBatch = eligible.curriculum().partBatch(eligible.batch());
+                }
             }
-            attempt.items = buildPool(mongo.find(Query.query(Criteria.where("operation").is(operation(type))
-                .and("level").in(eligible.curriculum().assessmentLevels(eligible.batch()).stream().map(String::valueOf).toList())), Catalog.class), type);
+            Criteria curriculum = Criteria.where("operation").is(operation(type));
+            if (eligible != null) curriculum.and("level").in(eligible.curriculum().assessmentLevels(eligible.batch()).stream().map(String::valueOf).toList());
+            attempt.items = buildPool(mongo.find(Query.query(curriculum), Catalog.class), type);
             if (attempt.items.isEmpty()) throw new BadRequestException("Test curriculum is not available yet");
             Collections.shuffle(attempt.items);
             attempt.userId = user.getId(); attempt.studentName = user.getName(); attempt.studentPin = user.getPin();
             attempt.beginKey = beginKey; attempt.startedAt = new Date();
             try { attempt = mongo.insert(attempt); }
             catch (DuplicateKeyException concurrentStart) {
-                attempt = current(user.getId(), type);
+                attempt = current(user.getId(), type, flow);
                 if (attempt == null) throw new ClientErrorException("Please retry Begin", 409);
             }
         }

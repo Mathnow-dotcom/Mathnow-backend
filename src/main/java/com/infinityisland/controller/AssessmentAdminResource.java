@@ -72,6 +72,7 @@ public class AssessmentAdminResource {
             row.put("partBatch", a.programPartBatch);
             row.put("attemptNumber", a.programBatch);
             row.put("passed", a.programPassed);
+            row.put("flow", a.programBatch == null ? "legacy" : "learning");
             return row;
         }).toList();
     }
@@ -83,7 +84,7 @@ public class AssessmentAdminResource {
         var query = tests.reportQuery(student, type, from, to);
         StreamingOutput output = stream -> {
             var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent,Correct under 3 seconds percent,Answered at America/Los_Angeles,Batch,Passed,Addition part,Part batch\r\n");
+            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent,Correct under 3 seconds percent,Answered at America/Los_Angeles,Batch,Passed,Addition part,Part batch,Test flow\r\n");
             try (var attempts = tests.export(query)) {
                 var iterator = attempts.iterator();
                 while (iterator.hasNext()) {
@@ -97,7 +98,8 @@ public class AssessmentAdminResource {
                             a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
                             i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs(),
                             averageSeconds, fastCorrectPercent, underThreePercent, csvTimestamp(answer.answeredAt()),
-                            a.programBatch, a.programPassed, a.programPart, a.programPartBatch};
+                            a.programBatch, a.programPassed, a.programPart, a.programPartBatch,
+                            a.programBatch == null ? "Legacy test" : "Learning assessment"};
                         for (int j = 0; j < values.length; j++) {
                             if (j > 0) writer.write(',');
                             writer.write(csv(values[j]));

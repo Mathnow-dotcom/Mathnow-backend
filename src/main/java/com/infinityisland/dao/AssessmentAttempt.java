@@ -12,6 +12,8 @@ public class AssessmentAttempt {
     @Version public Long version;
     public String userId, studentName, studentPin, type = "A", beginKey, session;
     public boolean completed;
+    // Active-attempt namespace. Historical records are classified by programBatch.
+    public String flow;
     public Date startedAt, completedAt, lastTick;
     public int position, correctCount;
     public long totalMs, questionMs;
