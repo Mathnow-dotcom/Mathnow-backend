@@ -39,6 +39,7 @@ class AssessmentFlowsTest {
         if (!Objects.equals(q.get("userId"), a.userId)) return false;
         if (q.containsKey("_id") && !Objects.equals(q.get("_id"), a.id)) return false;
         if (q.containsKey("beginKey") && !Objects.equals(q.get("beginKey"), a.beginKey)) return false;
+        if (q.containsKey("legacyPart") && !Objects.equals(q.get("legacyPart"), a.legacyPart)) return false;
         if (q.containsKey("type") && !Objects.equals(q.get("type"), a.type)) return false;
         if (q.containsKey("completed") && !Objects.equals(q.get("completed"), a.completed)) return false;
         if (q.containsKey("programBatch")) {
@@ -114,6 +115,36 @@ class AssessmentFlowsTest {
         verify(mongo, times(1)).insert(any(AssessmentAttempt.class));
     }
 
+    @Test void standaloneAdditionPartsHaveSeparatePoolsAndResumeNamespaces() {
+        pending("legacy"); // Existing full-pool attempt must remain untouched.
+        when(mongo.find(any(Query.class), eq(Catalog.class))).thenAnswer(i -> {
+            Document q = ((Query)i.getArgument(0)).getQueryObject();
+            List<String> levels = ((Document)q.get("level")).getList("$in", String.class);
+            boolean first = levels.contains("1");
+            assertEquals(first ? 10 : 9, levels.size());
+            assertEquals(first ? "10" : "19", levels.get(levels.size()-1));
+            Catalog c = new Catalog(); c.setOperation("add");
+            Catalog.Fact f = new Catalog.Fact(); f.setA(first ? 1 : 11); f.setB(first ? 1 : 11);
+            c.setFacts(List.of(f)); return List.of(c);
+        });
+        var first = service.start(user, "part-one", "session", "A", "legacy", 1);
+        var second = service.start(user, "part-two", "session", "A", "legacy", 2);
+        assertNotEquals(first.id, second.id);
+        assertEquals(1, first.items.get(0).a()); assertEquals(11, second.items.get(0).a());
+        assertSame(first, service.current("student", "A", "legacy", 1));
+        assertSame(second, service.current("student", "A", "legacy", 2));
+        assertSame(first, service.start(user, "part-one", "session", "A", "legacy", 1));
+        assertThrows(BadRequestException.class, () -> service.start(user, "part-one", "session", "A", "legacy", 2));
+        assertThrows(BadRequestException.class, () -> service.start(user, "invalid", "session", "B", "legacy", 1));
+        assertThrows(BadRequestException.class, () -> service.start(user, "invalid", "session", "A", "learning", 1));
+        assertThrows(BadRequestException.class, () -> service.current("student", "A", "legacy", 3));
+        service.update("student", first.id, "session", 0, "answer", "2");
+        service.update("student", first.id, "session", 0, "answer", "2");
+        assertEquals(1, first.answers.size()); assertFalse(second.completed);
+        assertEquals(1, AssessmentService.student(first).part());
+        verifyNoInteractions(program);
+    }
+
     @Test void learningCompletionStillReconcilesProgress() {
         var a = pending("learning"); a.session = "session";
         service.update("student", a.id, "session", 0, "answer", "2");
@@ -138,7 +169,7 @@ class AssessmentFlowsTest {
         assertTrue(queries.getAllValues().stream().allMatch(q -> Boolean.FALSE.equals(q.getQueryObject().get("completed"))));
         var order = inOrder(indexes);
         order.verify(indexes).ensureIndex(argThat(def ->
-            def.getIndexKeys().keySet().equals(new LinkedHashSet<>(List.of("userId","type","flow"))) &&
+            def.getIndexKeys().keySet().equals(new LinkedHashSet<>(List.of("userId","type","flow","legacyPart"))) &&
             Boolean.TRUE.equals(def.getIndexOptions().get("unique")) &&
             new Document("completed",false).equals(def.getIndexOptions().get("partialFilterExpression"))));
         order.verify(indexes).getIndexInfo();

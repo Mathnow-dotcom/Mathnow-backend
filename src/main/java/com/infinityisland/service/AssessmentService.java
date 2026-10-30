@@ -39,12 +39,13 @@ public class AssessmentService {
         mongo.updateMulti(Query.query(Criteria.where("completed").is(false).and("programBatch").is(null)),
             new org.springframework.data.mongodb.core.query.Update().set("flow", "legacy"), AssessmentAttempt.class);
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
-            .on("userId", Sort.Direction.ASC).on("type", Sort.Direction.ASC).on("flow", Sort.Direction.ASC).unique()
-            .named("active_assessment_per_flow")
+            .on("userId", Sort.Direction.ASC).on("type", Sort.Direction.ASC).on("flow", Sort.Direction.ASC).on("legacyPart", Sort.Direction.ASC).unique()
+            .named("active_assessment_per_flow_part")
             .partial(PartialIndexFilter.of(Criteria.where("completed").is(false))));
         // Install the replacement constraint before removing the former cross-flow constraint.
         for (var index : mongo.indexOps(AssessmentAttempt.class).getIndexInfo()) {
-            if (index.isUnique() && index.getIndexFields().stream().map(f -> f.getKey()).toList().equals(List.of("userId", "type")))
+            var fields = index.getIndexFields().stream().map(f -> f.getKey()).toList();
+            if (index.isUnique() && (fields.equals(List.of("userId", "type")) || fields.equals(List.of("userId", "type", "flow"))))
                 mongo.indexOps(AssessmentAttempt.class).dropIndex(index.getName());
         }
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
@@ -100,10 +101,14 @@ public class AssessmentService {
         return flow;
     }
     public AssessmentAttempt current(String userId, String type, String requestedFlow) {
+        return current(userId, type, requestedFlow, null);
+    }
+    public AssessmentAttempt current(String userId, String type, String requestedFlow, Integer part) {
         String flow = testFlow(requestedFlow);
+        validatePart(type, flow, part);
         Criteria criteria = Criteria.where("userId").is(userId)
             .and("type").is(testType(type)).and("completed").is(false);
-        if ("legacy".equals(flow)) criteria.and("programBatch").is(null);
+        if ("legacy".equals(flow)) criteria.and("programBatch").is(null).and("legacyPart").is(part);
         else criteria.and("programBatch").ne(null);
         return mongo.findOne(Query.query(criteria), AssessmentAttempt.class);
     }
@@ -115,20 +120,30 @@ public class AssessmentService {
         return start(user, beginKey, session, requestedType, "learning");
     }
     public AssessmentAttempt start(User user, String beginKey, String session, String requestedType, String requestedFlow) {
+        return start(user, beginKey, session, requestedType, requestedFlow, null);
+    }
+    static void validatePart(String type, String flow, Integer part) {
+        if (part != null && (!"A".equals(testType(type)) || !"legacy".equals(flow) || (part != 1 && part != 2)))
+            throw new BadRequestException("Invalid addition test part");
+    }
+    public AssessmentAttempt start(User user, String beginKey, String session, String requestedType, String requestedFlow, Integer part) {
         String type = testType(requestedType);
         String flow = testFlow(requestedFlow);
+        validatePart(type, flow, part);
         requireKey(beginKey); requireKey(session);
         AssessmentAttempt attempt = mongo.findOne(Query.query(Criteria.where("userId").is(user.getId())
             .and("beginKey").is(beginKey)), AssessmentAttempt.class);
         if (attempt != null && !type.equals(attempt.type)) throw new BadRequestException("Request identifier belongs to another test");
         if (attempt != null && !flow.equals(attempt.programBatch == null ? "legacy" : "learning"))
             throw new BadRequestException("Request identifier belongs to another test flow");
-        if (attempt == null) attempt = current(user.getId(), type, flow);
+        if (attempt != null && !Objects.equals(part, attempt.legacyPart)) throw new BadRequestException("Request identifier belongs to another test part");
+        if (attempt == null) attempt = current(user.getId(), type, flow, part);
         if (attempt == null) {
             var eligible = "learning".equals(flow) ? program.requireAssessment(user.getId(), operation(type)) : null;
             attempt = new AssessmentAttempt();
             attempt.type = type;
             attempt.flow = flow;
+            attempt.legacyPart = part;
             if (eligible != null) {
                 attempt.programSubject = operation(type);
                 attempt.programEnrollment = program.assessmentEnrollment(program.get(user.getId()), eligible);
@@ -140,6 +155,7 @@ public class AssessmentService {
             }
             Criteria curriculum = Criteria.where("operation").is(operation(type));
             if (eligible != null) curriculum.and("level").in(eligible.curriculum().assessmentLevels(eligible.batch()).stream().map(String::valueOf).toList());
+            if (part != null) curriculum.and("level").in(java.util.stream.IntStream.rangeClosed(part == 1 ? 1 : 11, part == 1 ? 10 : 19).mapToObj(String::valueOf).toList());
             attempt.items = buildPool(mongo.find(Query.query(curriculum), Catalog.class), type);
             if (attempt.items.isEmpty()) throw new BadRequestException("Test curriculum is not available yet");
             Collections.shuffle(attempt.items);
@@ -147,7 +163,7 @@ public class AssessmentService {
             attempt.beginKey = beginKey; attempt.startedAt = new Date();
             try { attempt = mongo.insert(attempt); }
             catch (DuplicateKeyException concurrentStart) {
-                attempt = current(user.getId(), type, flow);
+                attempt = current(user.getId(), type, flow, part);
                 if (attempt == null) throw new ClientErrorException("Please retry Begin", 409);
             }
         }
@@ -223,7 +239,7 @@ public class AssessmentService {
         return a == null ? null : new StudentState(a.id, a.type, a.completed, a.position, a.items.size(),
             a.completed ? null : a.items.get(a.position).problem(a.type),
             !a.completed && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem(a.type) : null,
-            a.programPart, a.programPartBatch);
+            a.legacyPart != null ? a.legacyPart : a.programPart, a.programPartBatch);
     }
 
     public Query reportQuery(String pin, String type, String from, String to) {

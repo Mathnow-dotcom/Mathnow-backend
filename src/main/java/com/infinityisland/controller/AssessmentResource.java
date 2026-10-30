@@ -21,18 +21,18 @@ public class AssessmentResource {
         if (pin == null || pin.isBlank()) throw new NotAuthorizedException("PIN required");
         return users.findByPin(pin).orElseThrow(() -> new NotAuthorizedException("Invalid PIN"));
     }
-    public record Start(String beginKey, String session, String type, String flow) {}
+    public record Start(String beginKey, String session, String type, String flow, Integer part) {}
     public record Update(String session, Integer position, String action, String answer) {}
 
     @GET @Path("current")
-    public Map<String, Object> current(@HeaderParam("x-pin") String pin, @QueryParam("type") String type, @QueryParam("flow") String flow) {
-        var state = AssessmentService.student(tests.current(user(pin).getId(), type, flow));
+    public Map<String, Object> current(@HeaderParam("x-pin") String pin, @QueryParam("type") String type, @QueryParam("flow") String flow, @QueryParam("part") Integer part) {
+        var state = AssessmentService.student(tests.current(user(pin).getId(), type, flow, part));
         return Collections.singletonMap("attempt", state);
     }
     @POST @Path("start") @Consumes(MediaType.APPLICATION_JSON)
     public AssessmentService.StudentState start(@HeaderParam("x-pin") String pin, Start body) {
         if (body == null) throw new BadRequestException("Request required");
-        return AssessmentService.student(tests.start(user(pin), body.beginKey(), body.session(), body.type(), body.flow()));
+        return AssessmentService.student(tests.start(user(pin), body.beginKey(), body.session(), body.type(), body.flow(), body.part()));
     }
     @POST @Path("{id}") @Consumes(MediaType.APPLICATION_JSON)
     public AssessmentService.StudentState update(@HeaderParam("x-pin") String pin, @PathParam("id") String id, Update body) {

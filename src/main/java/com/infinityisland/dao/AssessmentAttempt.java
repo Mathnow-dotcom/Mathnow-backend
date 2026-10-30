@@ -21,6 +21,7 @@ public class AssessmentAttempt {
     public String programEnrollment;
     public Integer programBatch;
     public Integer programPart, programPartBatch;
+    public Integer legacyPart;
     public Boolean programPassed;
     public List<Item> items = new ArrayList<>();
     public List<Answer> answers = new ArrayList<>();

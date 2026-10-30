@@ -68,7 +68,7 @@ public class AssessmentAdminResource {
             row.put("correctUnderTwoSecondsPercent", correctUnderTwoSecondsPercent(a));
             row.put("correctUnderThreeSecondsPercent", correctUnderSecondsPercent(a, 3000));
             row.put("batch", a.programBatch);
-            row.put("part", a.programPart);
+            row.put("part", a.legacyPart != null ? a.legacyPart : a.programPart);
             row.put("partBatch", a.programPartBatch);
             row.put("attemptNumber", a.programBatch);
             row.put("passed", a.programPassed);
@@ -98,7 +98,7 @@ public class AssessmentAdminResource {
                             a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
                             i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs(),
                             averageSeconds, fastCorrectPercent, underThreePercent, csvTimestamp(answer.answeredAt()),
-                            a.programBatch, a.programPassed, a.programPart, a.programPartBatch,
+                            a.programBatch, a.programPassed, a.legacyPart != null ? a.legacyPart : a.programPart, a.programPartBatch,
                             a.programBatch == null ? "Legacy test" : "Learning assessment"};
                         for (int j = 0; j < values.length; j++) {
                             if (j > 0) writer.write(',');
