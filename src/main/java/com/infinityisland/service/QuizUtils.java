@@ -356,6 +356,7 @@ public final class QuizUtils {
         for (int[] pair : shuffledPool) {
             if (choices.size() >= 4) break;
             int pa = pair[0], pb = pair[1];
+            if (("div".equals(op) || "frac".equals(op)) && pb == 0) continue;
             int result = computeAnswer(op, pa, pb);
             if (result != targetAnswer) {
                 choices.add(buildQuestionText(op, pa, pb));
@@ -375,6 +376,7 @@ public final class QuizUtils {
             if (da < 0) da = 0;
             if (db < 0) db = 0;
             if (!isCommutative(op) && da < db) { int temp = da; da = db; db = temp; }
+            if (("div".equals(op) || "frac".equals(op)) && db == 0) { attempts++; continue; }
             int result = computeAnswer(op, da, db);
             if (result != targetAnswer) {
                 choices.add(buildQuestionText(op, da, db));

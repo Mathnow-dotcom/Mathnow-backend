@@ -288,6 +288,10 @@ public class GameConfigService {
     public long getInactivityThresholdMs() {
         return cachedConfig.get().getInactivityThresholdMs();
     }
+    public long getCorrectionRoundLimitMs() {
+        Long value = cachedConfig.get().getCorrectionRoundLimitMs();
+        return value == null ? 6000L : value;
+    }
 
     public long getPretestInactivityThresholdMs() {
         return cachedConfig.get().getPretestInactivityThresholdMs();
@@ -410,6 +414,11 @@ public class GameConfigService {
         }
         if (updates.getInactivityThresholdMs() > 0) {
             current.setInactivityThresholdMs(updates.getInactivityThresholdMs());
+        }
+        if (updates.getCorrectionRoundLimitMs() != null) {
+            if (updates.getCorrectionRoundLimitMs() < 1000 || updates.getCorrectionRoundLimitMs() > 300000)
+                throw new IllegalArgumentException("Correction round must be between 1 and 300 seconds");
+            current.setCorrectionRoundLimitMs(updates.getCorrectionRoundLimitMs());
         }
         if (updates.getPretestInactivityThresholdMs() > 0) {
             current.setPretestInactivityThresholdMs(updates.getPretestInactivityThresholdMs());

@@ -36,6 +36,7 @@ public class QuizService {
     @Autowired private LightningModeHandler lightningHandler;
     @Autowired private NormalModeHandler normalHandler;
     @Autowired private PretestModeHandler pretestHandler;
+    @Autowired private CorrectionLoopService corrections;
 
     @Autowired
     public QuizService(CachedQuizRunService cachedQuizRuns,
@@ -60,10 +61,20 @@ public class QuizService {
         String belt = nvl(beltOrDegree, "white");
         int lvl = safe(level, 1);
         program.requireLearning(userId, op, lvl);
+        QuizRun pendingRun = corrections.pendingRun(userId, op, lvl, belt);
+        if (pendingRun != null) {
+            PrepareResponse out = new PrepareResponse(); out.quizRunId = pendingRun.getId(); out.resumed = true; out.correctionPending = true; out.pretestMode = pendingRun.isPretestMode(); return out;
+        }
         PrepareResponse resume = helper.findActiveGameModeResume(userId);
         if (resume != null) {
-            helper.mustGetRun(resume.quizRunId);
-            return resume;
+            QuizRun active = cachedQuizRuns.findById(resume.quizRunId).orElse(null);
+            // An unrelated pending correction must not redirect another level/belt selection.
+            if (active == null || !corrections.pending(active) ||
+                    (Objects.equals(active.getOperation(), op) && Objects.equals(active.getLevel(), lvl)
+                        && Objects.equals(active.getBeltOrDegree(), belt))) {
+                helper.mustGetRun(resume.quizRunId);
+                return resume;
+            }
         }
 
         if (!gameConfig.isOperationEnabled(op)) {
@@ -104,6 +115,14 @@ public class QuizService {
 
     public Object start(String quizRunId) {
         QuizRun run = helper.mustGetRun(quizRunId);
+        if (corrections.pending(run)) {
+            var resumed = helper.buildStartResponse(run,cachedQuestions.findAllById(run.getItems()),true);
+            resumed.practice = run.correctionLoop.originalPractice;
+            resumed.mainFlowCorrect = nvl(run.getMainFlowCorrect(), 0); resumed.wrong = nvl(run.getWrong(), 0);
+            resumed.operation = run.getOperation(); resumed.level = run.getLevel(); resumed.beltOrDegree = run.getBeltOrDegree();
+            helper.pauseTimer(run);
+            return resumed;
+        }
 
         if (QuizStatus.COMPLETED.value().equalsIgnoreCase(run.getStatus())) {
             return helper.buildCompletedResponse(run);
@@ -159,6 +178,9 @@ public class QuizService {
     public Object answer(String quizRunId, String questionId, int answer, long responseMs,
                          Boolean forcePass, Boolean skipLevelAward) {
         QuizRun run = helper.mustGetRun(quizRunId);
+        if (corrections.pending(run)) {
+            AnswerResponse out = new AnswerResponse(); out.practice = run.correctionLoop.originalPractice; return out;
+        }
 
         if (QuizStatus.COMPLETED.value().equalsIgnoreCase(nvl(run.getStatus(), ""))) {
             return helper.buildCompletedResponse(run);
@@ -180,18 +202,64 @@ public class QuizService {
             return helper.handleForcePass(run, responseMs, Boolean.TRUE.equals(skipLevelAward));
         }
 
-        if (run.isPretestMode()) return pretestHandler.handlePretestModeAnswer(run, questionId, answer, responseMs);
-        if (run.isSurfMode()) return surfHandler.handleSurfModeAnswer(run, questionId, answer, responseMs);
-        if (run.isRocketMode()) return rocketHandler.handleRocketModeAnswer(run, questionId, answer, responseMs);
-        if (run.isBonusMode()) return bonusHandler.handleBonusModeAnswer(run, questionId, answer, responseMs);
-        if (run.isLightningMode()) return lightningHandler.handleLightningModeAnswer(run, questionId, answer, responseMs);
-        return normalHandler.handleNormalModeAnswer(run, questionId, answer, responseMs);
+        Object out;
+        if (run.isPretestMode()) out = pretestHandler.handlePretestModeAnswer(run, questionId, answer, responseMs);
+        else if (run.isSurfMode()) out = surfHandler.handleSurfModeAnswer(run, questionId, answer, responseMs);
+        else if (run.isRocketMode()) out = rocketHandler.handleRocketModeAnswer(run, questionId, answer, responseMs);
+        else if (run.isBonusMode()) out = bonusHandler.handleBonusModeAnswer(run, questionId, answer, responseMs);
+        else if (run.isLightningMode()) out = lightningHandler.handleLightningModeAnswer(run, questionId, answer, responseMs);
+        else out = normalHandler.handleNormalModeAnswer(run, questionId, answer, responseMs);
+        return corrections.intercept(run, out);
     }
 
     // ===== PRACTICE ANSWER =====
 
     public Object practiceAnswer(String quizRunId, String questionId, int answer) {
         QuizRun run = helper.mustGetRun(quizRunId);
+        synchronized (run) {
+            var loop = run.correctionLoop;
+            if (loop != null && Objects.equals(questionId, loop.originalPractice.getId())) {
+                if ("finished".equals(loop.phase)) { cachedQuizRuns.saveSync(run); return loop.completionResponse; }
+                if (!"passed".equals(loop.phase)) throw new jakarta.ws.rs.ForbiddenException("Complete the three-fact correction first");
+                if (!Objects.equals(answer, loop.originalPractice.getCorrectAnswer())) throw new jakarta.ws.rs.BadRequestException("Invalid correction completion");
+                // Persist a checkpoint before the existing resume handlers can save an advanced run.
+                // A retry after a lost response or server restart must never advance it twice.
+                boolean alreadyAdvanced = loop.completionFromIndex != null &&
+                    (!Objects.equals(loop.completionFromIndex, run.getCurrentIndex()) ||
+                     !Objects.equals(loop.completionFromItems, run.getItems()) ||
+                     QuizStatus.COMPLETED.value().equalsIgnoreCase(run.getStatus()));
+                if (loop.completionFromIndex == null) {
+                    loop.completionFromIndex = nvl(run.getCurrentIndex(), 0);
+                    loop.completionFromItems = new ArrayList<>(run.getItems());
+                    cachedQuizRuns.saveSync(run);
+                }
+                Object response = alreadyAdvanced ? correctionResumeResponse(run) : finishPractice(run, questionId, answer);
+                loop.phase = "finished"; loop.completionResponse = response;
+                cachedQuizRuns.saveSync(run);
+                return response;
+            }
+            if (corrections.pending(run)) throw new jakarta.ws.rs.ForbiddenException("Complete the three-fact correction first");
+            return finishPractice(run, questionId, answer);
+        }
+    }
+    private Object correctionResumeResponse(QuizRun run) {
+        if (run.isPretestMode() && helper.isPretestComplete(run))
+            return pretestHandler.completePretestMode(run, null);
+        if (QuizStatus.COMPLETED.value().equalsIgnoreCase(run.getStatus()))
+            return helper.buildLateInactivityResponse(run);
+        AnswerResponse out = helper.buildDuplicateResponse(run);
+        out.resume = true;
+        String nextId = currentQuestionId(run);
+        out.next = nextId == null ? null : cachedQuestions.findById(nextId).orElse(null);
+        if (run.isSurfMode() || run.isRocketMode()) {
+            out.questions = cachedQuestions.findAllById(run.getItems());
+            out.surfQuizRestarted = run.isSurfMode();
+            out.rocketQuizRestarted = run.isRocketMode();
+        }
+        if (run.isBonusMode()) out.bonusQuizRestarted = true;
+        return out;
+    }
+    private Object finishPractice(QuizRun run, String questionId, int answer) {
         guardRunningOrPrepared(run);
 
         GeneratedQuestion pq = cachedQuestions.findById(questionId).orElse(null);
@@ -231,6 +299,9 @@ public class QuizService {
 
     public Object inactivity(String quizRunId, String questionId) {
         QuizRun run = helper.mustGetRun(quizRunId);
+        if (corrections.pending(run)) {
+            AnswerResponse out = new AnswerResponse(); out.practice = run.correctionLoop.originalPractice; return out;
+        }
 
         if (!QuizStatus.RUNNING.value().equalsIgnoreCase(run.getStatus())) {
             return helper.buildLateInactivityResponse(run);
@@ -258,11 +329,12 @@ public class QuizService {
         long forcedInactivityResponseMs = gameConfig.getInactivityThresholdMs()
                 + gameConfig.getAnswerInactivityGraceMs()
                 + 1;
-        if (run.isSurfMode()) return surfHandler.handleSurfModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
-        if (run.isRocketMode()) return rocketHandler.handleRocketModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
-        if (run.isBonusMode()) return bonusHandler.handleBonusModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
-
-        return helper.handleNormalInactivity(run, currentQuestion);
+        Object out;
+        if (run.isSurfMode()) out = surfHandler.handleSurfModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
+        else if (run.isRocketMode()) out = rocketHandler.handleRocketModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
+        else if (run.isBonusMode()) out = bonusHandler.handleBonusModeAnswer(run, currentQId, -1, forcedInactivityResponseMs);
+        else out = helper.handleNormalInactivity(run, currentQuestion);
+        return corrections.intercept(run, out);
     }
 
     private void waitAnswerInactivityGrace() {
@@ -278,6 +350,13 @@ public class QuizService {
     // ===== COMPLETE =====
 
     public Object complete(String quizRunId) {
+        if (corrections.pending(helper.mustGetRun(quizRunId))) throw new jakarta.ws.rs.ForbiddenException("Complete the correction first");
         return helper.complete(quizRunId);
+    }
+
+    public Object correctionState(String id) { return corrections.state(helper.mustGetRun(id)); }
+    public String pendingCorrection(String userId) { return corrections.pendingRun(userId); }
+    public Object correctionAction(String runId, String id, long revision, String action, Integer answer, long responseMs) {
+        return corrections.act(helper.mustGetRun(runId),id,revision,action,answer,responseMs);
     }
 }

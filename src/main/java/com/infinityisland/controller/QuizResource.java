@@ -141,4 +141,21 @@ public class QuizResource {
    return ErrorResponse.of(e.getMessage());
   }
  }
+
+ public record CorrectionAction(String id, long revision, String action, Integer answer, long responseMs) {}
+ @GET @Path("/pending-correction")
+ public Object pendingCorrection(@HeaderParam("x-pin") String pin) {
+  return java.util.Collections.singletonMap("quizRunId",quiz.pendingCorrection(pinUserResolver.ensureUserId(pin)));
+ }
+ @GET @Path("/{runId}/correction")
+ public Object correction(@HeaderParam("x-pin") String pin, @PathParam("runId") String runId) {
+  quiz.requireOwner(pinUserResolver.ensureUserId(pin),runId);
+  return quiz.correctionState(runId);
+ }
+ @POST @Path("/{runId}/correction")
+ public Object correctionAction(@HeaderParam("x-pin") String pin, @PathParam("runId") String runId, CorrectionAction body) {
+  quiz.requireOwner(pinUserResolver.ensureUserId(pin),runId);
+  if (body == null) throw new BadRequestException("Request required");
+  return quiz.correctionAction(runId,body.id(),body.revision(),body.action(),body.answer(),body.responseMs());
+ }
 }

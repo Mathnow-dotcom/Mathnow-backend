@@ -398,6 +398,7 @@ public class ConfigResource {
         // General settings
         Map<String, Object> general = new LinkedHashMap<>();
         general.put("inactivityThresholdMs", config.getInactivityThresholdMs());
+        general.put("correctionRoundLimitMs", config.getCorrectionRoundLimitMs() == null ? 6000L : config.getCorrectionRoundLimitMs());
         general.put("inactivityThresholdSeconds", config.getInactivityThresholdMs() / 1000.0);
         response.put("general", general);
 
@@ -490,6 +491,11 @@ public class ConfigResource {
             long value = ((Number) body.get("inactivityThresholdMs")).longValue();
             if (value < 1000) throw new IllegalArgumentException("inactivityThresholdMs must be >= 1000");
             updates.setInactivityThresholdMs(value);
+        }
+        if (body.containsKey("correctionRoundLimitMs")) {
+            long value = ((Number) body.get("correctionRoundLimitMs")).longValue();
+            if (value < 1000 || value > 300000) throw new IllegalArgumentException("Correction round must be between 1 and 300 seconds");
+            updates.setCorrectionRoundLimitMs(value);
         }
 
         if (body.containsKey("pretestInactivityThresholdMs")) {

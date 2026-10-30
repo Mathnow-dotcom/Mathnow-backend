@@ -71,6 +71,23 @@ public class QuizRun {
     private Instant updatedAt;
     private Boolean practiceCompletesRun;
     private Integer totalQuestions;
+    @JsonIgnore public CorrectionLoop correctionLoop;
+
+    public static class CorrectionLoop {
+        public String id;
+        public long revision;
+        public String phase = "answer"; // answer shown | practice | passed | finished
+        public List<GeneratedQuestion> facts = new ArrayList<>();
+        public List<Integer> order = new ArrayList<>();
+        public int position;
+        public int shown;
+        public long elapsedMs;
+        public long limitMs;
+        public GeneratedQuestion originalPractice;
+        public Object completionResponse;
+        public Integer completionFromIndex;
+        public List<String> completionFromItems;
+    }
 
     public Integer getTotalQuestions() { return totalQuestions; }
     public void setTotalQuestions(Integer totalQuestions) { this.totalQuestions = totalQuestions; }

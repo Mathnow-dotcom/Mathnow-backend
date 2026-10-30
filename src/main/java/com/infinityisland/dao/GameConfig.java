@@ -52,6 +52,9 @@ public class GameConfig {
 
     // ===== GENERAL =====
     private long inactivityThresholdMs;
+    private Long correctionRoundLimitMs;
+    public Long getCorrectionRoundLimitMs() { return correctionRoundLimitMs; }
+    public void setCorrectionRoundLimitMs(Long value) { correctionRoundLimitMs = value; }
     private long pretestInactivityThresholdMs;
 
     // ===== METADATA =====

@@ -17,6 +17,7 @@ public final class QuizResponses {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class PrepareResponse {
+        public Boolean correctionPending;
         // Common fields
         public String quizRunId;
         public Boolean resumed;
@@ -72,6 +73,9 @@ public final class QuizResponses {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class StartResponse {
+        public Object practice;
+        public String operation, beltOrDegree;
+        public Integer level, mainFlowCorrect, wrong;
         // Common fields
         public String quizRunId;
         public List<?> questions;
