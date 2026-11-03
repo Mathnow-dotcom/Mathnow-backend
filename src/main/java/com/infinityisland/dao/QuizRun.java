@@ -76,7 +76,7 @@ public class QuizRun {
     public static class CorrectionLoop {
         public String id;
         public long revision;
-        public String phase = "answer"; // answer shown | practice | passed | finished
+        public String phase = "answer"; // answer shown | retry same fact | practice round | passed | finished
         public List<GeneratedQuestion> facts = new ArrayList<>();
         public List<Integer> order = new ArrayList<>();
         public int position;

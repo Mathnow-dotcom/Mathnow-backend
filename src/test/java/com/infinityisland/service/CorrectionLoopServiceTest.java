@@ -54,7 +54,7 @@ class CorrectionLoopServiceTest {
         assertEquals(List.of("1 + 1","2 + 2","3 + 3"),c.facts.stream().map(GeneratedQuestion::getQuestion).toList());
     }
     Document fact(int a,int b) {return new Document("_id",new Document("a",a).append("b",b));}
-    void next(QuizRun.CorrectionLoop c) {CorrectionLoopService.apply(c,"next",null,0);assertEquals(Set.of(0,1,2),new HashSet<>(c.order));}
+    void next(QuizRun.CorrectionLoop c) {CorrectionLoopService.apply(c,"next",null,0);assertEquals("retry",c.phase);CorrectionLoopService.apply(c,"answer",c.facts.get(c.shown).getCorrectAnswer(),500);assertEquals(Set.of(0,1,2),new HashSet<>(c.order));}
     void correct(QuizRun.CorrectionLoop c,long ms) {CorrectionLoopService.apply(c,"answer",c.facts.get(c.order.get(c.position)).getCorrectAnswer(),ms);}
     @Test void requiresThreeUnassistedAnswersWithinOneTotalLimit() {
         var c=run("sub",4,2).correctionLoop;next(c);
@@ -64,7 +64,7 @@ class CorrectionLoopServiceTest {
     @Test void oneMillisecondOverTotalRestartsEntireRound() {
         var c=run("sub",4,2).correctionLoop;next(c);
         correct(c,2000);correct(c,2000);correct(c,2001);
-        assertEquals("answer",c.phase);next(c);assertEquals(0,c.position);assertEquals(0,c.elapsedMs);
+        assertEquals("practice",c.phase);assertEquals(0,c.position);assertEquals(0,c.elapsedMs);
     }
     @Test void wrongAndTimeoutShowAnswerAndRequireNext() {
         var c=run("sub",4,2).correctionLoop;next(c);correct(c,500);
@@ -72,6 +72,31 @@ class CorrectionLoopServiceTest {
         assertEquals("answer",c.phase);assertEquals(wrongIndex,c.shown);
         assertThrows(jakarta.ws.rs.BadRequestException.class,()->correct(c,1));
         next(c);CorrectionLoopService.apply(c,"timeout",null,6001);assertEquals("answer",c.phase);
+    }
+    @Test void slowRoundDoesNotInterruptAnyOfItsThreeQuestions() {
+        var c=run("sub",4,2).correctionLoop; c.limitMs=9000; next(c);
+        correct(c,10000); assertEquals("practice",c.phase); assertEquals(1,c.position);
+        CorrectionLoopService.apply(c,"pause",null,1000);
+        assertEquals("practice",c.phase); assertEquals(1,c.position);
+        correct(c,1000); assertEquals(2,c.position);
+        correct(c,1000); assertEquals("practice",c.phase); assertEquals(0,c.position);assertEquals(0,c.elapsedMs);
+        correct(c,3000);correct(c,3000);correct(c,3000);assertEquals("passed",c.phase);
+    }
+    @Test void sameFactPracticeIsRequiredAndNotCountedInRound() {
+        var run=run("sub",4,2); var c=run.correctionLoop;
+        CorrectionLoopService.apply(c,"next",null,0);
+        assertEquals("retry",c.phase);assertEquals(c.facts.get(0),service.state(run).question());
+        CorrectionLoopService.apply(c,"answer",-1,1000);assertEquals("answer",c.phase);
+        CorrectionLoopService.apply(c,"next",null,0);
+        CorrectionLoopService.apply(c,"timeout",null,10000);assertEquals("answer",c.phase);
+        next(c);assertEquals(0,c.elapsedMs);assertEquals(0,c.position);
+        correct(c,1000);int missed=c.order.get(c.position);
+        CorrectionLoopService.apply(c,"answer",-1,1000);
+        CorrectionLoopService.apply(c,"next",null,0);
+        assertEquals("retry",c.phase);assertEquals(c.facts.get(missed),service.state(run).question());
+        CorrectionLoopService.apply(c,"pause",null,9000);assertEquals("retry",c.phase);
+        CorrectionLoopService.apply(c,"answer",c.facts.get(missed).getCorrectAnswer(),20000);
+        assertEquals("practice",c.phase);assertEquals(0,c.elapsedMs);assertEquals(0,c.position);
     }
     @Test void pausePreservesRoundPositionAndOnlyActiveTime() {
         var c=run("sub",4,2).correctionLoop;next(c);correct(c,1000);
@@ -82,10 +107,13 @@ class CorrectionLoopServiceTest {
     @Test void repeatedRequestsDoNotAdvanceOrCountTimeTwice() {
         var run=run("sub",4,2);var c=run.correctionLoop;
         service.act(run,c.id,0,"next",null,0);
+        service.act(run,c.id,1,"answer",c.facts.get(c.shown).getCorrectAnswer(),1000);
+        service.act(run,c.id,1,"answer",c.facts.get(c.shown).getCorrectAnswer(),1000);
+        assertEquals(0,c.position);assertEquals(0,c.elapsedMs);
         int answer=c.facts.get(c.order.get(0)).getCorrectAnswer();
-        service.act(run,c.id,1,"answer",answer,1000);
-        service.act(run,c.id,1,"answer",answer,1000);
-        assertEquals(1,c.position);assertEquals(1000,c.elapsedMs);assertEquals(2,c.revision);
+        service.act(run,c.id,2,"answer",answer,1000);
+        service.act(run,c.id,2,"answer",answer,1000);
+        assertEquals(1,c.position);assertEquals(1000,c.elapsedMs);assertEquals(3,c.revision);
         assertThrows(jakarta.ws.rs.BadRequestException.class,()->service.act(run,"other",2,"next",null,0));
     }
     @Test void pendingWrongResponseNeverReplacesSavedRound() {

@@ -41,6 +41,7 @@ class AssessmentFlowsTest {
         if (q.containsKey("beginKey") && !Objects.equals(q.get("beginKey"), a.beginKey)) return false;
         if (q.containsKey("legacyPart") && !Objects.equals(q.get("legacyPart"), a.legacyPart)) return false;
         if (q.containsKey("type") && !Objects.equals(q.get("type"), a.type)) return false;
+        if (q.containsKey("abandoned") && a.abandoned) return false;
         if (q.containsKey("completed") && !Objects.equals(q.get("completed"), a.completed)) return false;
         if (q.containsKey("programBatch")) {
             boolean learning = q.get("programBatch") instanceof Document;
@@ -57,16 +58,26 @@ class AssessmentFlowsTest {
         stored.add(a); return a;
     }
 
-    @Test void independentAndLearningResumeTheirOwnUnfinishedAttempt() {
-        var learning = pending("learning"); var legacy = pending("legacy");
-        assertSame(learning, service.current("student", "A", "learning"));
-        assertSame(legacy, service.current("student", "A", "legacy"));
-        assertSame(legacy, service.start(user, "legacy-resume", "session-one", "A", "legacy"));
-        assertSame(learning, service.start(user, "learning-resume", "session-two", "A", "learning"));
-        assertEquals("session-one", legacy.session);
-        assertEquals("session-two", learning.session);
+    @Test void newSessionStartsFreshWithoutDiscardingOldAnswers() {
+        var old = pending("legacy"); old.session="old-session";
+        old.answers.add(new AssessmentAttempt.Answer("1 + 1","2",true,1000));old.position=1;
+        when(mongo.find(any(Query.class),eq(Catalog.class))).thenReturn(List.of(catalog()));
+        var fresh=service.start(user,"new-key","new-session","A","legacy");
+        assertTrue(old.abandoned);assertFalse(old.completed);assertEquals(1,old.answers.size());
+        assertEquals(0,fresh.position);assertFalse(fresh.abandoned);assertNotEquals(old.id,fresh.id);
+        assertSame(fresh,service.start(user,"new-key","new-session","A","legacy"));
+        assertThrows(jakarta.ws.rs.ClientErrorException.class,()->service.start(user,"new-key","different-session","A","legacy"));
         verifyNoInteractions(program);
-        verify(mongo, never()).insert(any(AssessmentAttempt.class));
+    }
+    Catalog catalog() {
+        var c=new Catalog();c.setOperation("add");var f=new Catalog.Fact();f.setA(1);f.setB(1);c.setFacts(List.of(f));return c;
+    }
+    @Test void endedLearningAttemptDoesNotRefreshOrAdvanceProgram() {
+        var a=pending("learning");a.session="session";
+        service.update("student",a.id,"session",0,"end",null);
+        assertTrue(a.abandoned);assertFalse(a.completed);assertNull(a.programPassed);
+        assertNull(service.current("student","A","learning"));
+        verifyNoInteractions(program);
     }
 
     @Test void aBeginKeyCannotCrossFlows() {
@@ -164,14 +175,14 @@ class AssessmentFlowsTest {
         when(indexes.getIndexInfo()).thenReturn(List.of(old));
         service.indexes();
         var queries = org.mockito.ArgumentCaptor.forClass(Query.class);
-        verify(mongo, times(2)).updateMulti(queries.capture(),
+        verify(mongo, times(3)).updateMulti(queries.capture(),
             any(org.springframework.data.mongodb.core.query.Update.class), eq(AssessmentAttempt.class));
         assertTrue(queries.getAllValues().stream().allMatch(q -> Boolean.FALSE.equals(q.getQueryObject().get("completed"))));
         var order = inOrder(indexes);
         order.verify(indexes).ensureIndex(argThat(def ->
             def.getIndexKeys().keySet().equals(new LinkedHashSet<>(List.of("userId","type","flow","legacyPart"))) &&
             Boolean.TRUE.equals(def.getIndexOptions().get("unique")) &&
-            new Document("completed",false).equals(def.getIndexOptions().get("partialFilterExpression"))));
+            new Document("active",true).equals(def.getIndexOptions().get("partialFilterExpression"))));
         order.verify(indexes).getIndexInfo();
         order.verify(indexes).dropIndex("userId_1_type_1");
         verify(indexes, times(1)).dropIndex(anyString());

@@ -186,13 +186,31 @@ class AssessmentServiceTest {
         AssessmentService.applyUpdate(a,"tab-one",1,"answer","3",9000);
         assertEquals(5000,a.totalMs); assertEquals(2,a.answers.size());
     }
-    @Test void pauseAndResumePreserveQuestionTimeWithoutCountingOfflineGap() {
+    @Test void endingTestPreservesPartialTimeAndRejectsLaterAnswers() {
         var a = attempt();
         AssessmentService.applyUpdate(a,"tab-one",0,"pause",null,4000);
         assertNull(a.lastTick);
         AssessmentService.applyUpdate(a,"tab-one",0,"heartbeat",null,900000);
         AssessmentService.applyUpdate(a,"tab-one",0,"answer","3",902000);
-        assertEquals(5000,a.totalMs);
+        assertEquals(0,a.totalMs);assertEquals(3000,a.questionMs);
+        assertTrue(a.abandoned);assertFalse(a.completed);assertTrue(a.answers.isEmpty());
+    }
+    @Test void lostUnloadRequestCannotResumeAfterLeaseExpires() {
+        var a=attempt();
+        AssessmentService.applyUpdate(a,"tab-one",0,"answer","3",17000);
+        assertTrue(a.abandoned);assertFalse(a.completed);assertEquals(0,a.position);
+        assertNull(AssessmentService.student(a).problem());
+    }
+    @Test void endingWithStalePositionStillEndsButCannotUndoCompletion() {
+        var a=attempt();
+        AssessmentService.applyUpdate(a,"tab-one",0,"answer","3",2000);
+        AssessmentService.applyUpdate(a,"tab-one",0,"end",null,3000);
+        assertTrue(a.abandoned);assertEquals(1,a.answers.size());assertFalse(a.completed);
+        var done=attempt();
+        AssessmentService.applyUpdate(done,"tab-one",0,"answer","3",2000);
+        AssessmentService.applyUpdate(done,"tab-one",1,"answer","3",3000);
+        AssessmentService.applyUpdate(done,"tab-one",0,"end",null,4000);
+        assertTrue(done.completed);assertFalse(done.abandoned);
     }
     @Test void staleOrBackwardTimestampsDoNotAddTime() {
         var a = attempt();

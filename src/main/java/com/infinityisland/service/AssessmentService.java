@@ -38,23 +38,29 @@ public class AssessmentService {
             new org.springframework.data.mongodb.core.query.Update().set("flow", "learning"), AssessmentAttempt.class);
         mongo.updateMulti(Query.query(Criteria.where("completed").is(false).and("programBatch").is(null)),
             new org.springframework.data.mongodb.core.query.Update().set("flow", "legacy"), AssessmentAttempt.class);
+        mongo.updateMulti(Query.query(Criteria.where("completed").is(false).and("abandoned").ne(true)),
+            new org.springframework.data.mongodb.core.query.Update().set("active", true), AssessmentAttempt.class);
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
             .on("userId", Sort.Direction.ASC).on("type", Sort.Direction.ASC).on("flow", Sort.Direction.ASC).on("legacyPart", Sort.Direction.ASC).unique()
-            .named("active_assessment_per_flow_part")
-            .partial(PartialIndexFilter.of(Criteria.where("completed").is(false))));
+            .named("active_assessment_sessions")
+            .partial(PartialIndexFilter.of(Criteria.where("active").is(true))));
+        mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
+            .on("userId", Sort.Direction.ASC).on("programEnrollment", Sort.Direction.ASC)
+            .on("programSubject", Sort.Direction.ASC).on("programBatch", Sort.Direction.ASC)
+            .named("completed_learning_batch").unique().partial(PartialIndexFilter.of(
+                Criteria.where("programBatch").exists(true).and("completed").is(true))));
         // Install the replacement constraint before removing the former cross-flow constraint.
         for (var index : mongo.indexOps(AssessmentAttempt.class).getIndexInfo()) {
             var fields = index.getIndexFields().stream().map(f -> f.getKey()).toList();
-            if (index.isUnique() && (fields.equals(List.of("userId", "type")) || fields.equals(List.of("userId", "type", "flow"))))
+            if (index.isUnique() && (fields.equals(List.of("userId", "type")) || fields.equals(List.of("userId", "type", "flow"))
+                || fields.equals(List.of("userId", "type", "flow", "legacyPart")) && !"active_assessment_sessions".equals(index.getName())
+                || fields.equals(List.of("userId", "programEnrollment", "programSubject", "programBatch")) && !"completed_learning_batch".equals(index.getName())))
                 mongo.indexOps(AssessmentAttempt.class).dropIndex(index.getName());
         }
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
             .on("userId", Sort.Direction.ASC).on("beginKey", Sort.Direction.ASC).unique());
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index().on("completedAt", Sort.Direction.DESC));
-        mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
-            .on("userId", Sort.Direction.ASC).on("programEnrollment", Sort.Direction.ASC)
-            .on("programSubject", Sort.Direction.ASC).on("programBatch", Sort.Direction.ASC)
-            .unique().partial(PartialIndexFilter.of(Criteria.where("programBatch").exists(true))));
+
     }
 
     public static List<Item> buildPool(List<Catalog> catalogs) {
@@ -107,7 +113,7 @@ public class AssessmentService {
         String flow = testFlow(requestedFlow);
         validatePart(type, flow, part);
         Criteria criteria = Criteria.where("userId").is(userId)
-            .and("type").is(testType(type)).and("completed").is(false);
+            .and("type").is(testType(type)).and("completed").is(false).and("abandoned").ne(true);
         if ("legacy".equals(flow)) criteria.and("programBatch").is(null).and("legacyPart").is(part);
         else criteria.and("programBatch").ne(null);
         return mongo.findOne(Query.query(criteria), AssessmentAttempt.class);
@@ -137,12 +143,19 @@ public class AssessmentService {
         if (attempt != null && !flow.equals(attempt.programBatch == null ? "legacy" : "learning"))
             throw new BadRequestException("Request identifier belongs to another test flow");
         if (attempt != null && !Objects.equals(part, attempt.legacyPart)) throw new BadRequestException("Request identifier belongs to another test part");
-        if (attempt == null) attempt = current(user.getId(), type, flow, part);
+        if (attempt != null && !Objects.equals(attempt.session, session))
+            throw new ClientErrorException("This test session has ended. Start a new test.", 409);
+        if (attempt == null) {
+            var previous = current(user.getId(), type, flow, part);
+            if (previous != null) change(user.getId(), previous.id, a -> abandon(a, System.currentTimeMillis()));
+        }
         if (attempt == null) {
             var eligible = "learning".equals(flow) ? program.requireAssessment(user.getId(), operation(type)) : null;
             attempt = new AssessmentAttempt();
             attempt.type = type;
             attempt.flow = flow;
+            attempt.active = true;
+            attempt.session = session;
             attempt.legacyPart = part;
             if (eligible != null) {
                 attempt.programSubject = operation(type);
@@ -160,16 +173,18 @@ public class AssessmentService {
             if (attempt.items.isEmpty()) throw new BadRequestException("Test curriculum is not available yet");
             Collections.shuffle(attempt.items);
             attempt.userId = user.getId(); attempt.studentName = user.getName(); attempt.studentPin = user.getPin();
-            attempt.beginKey = beginKey; attempt.startedAt = new Date();
+            attempt.beginKey = beginKey; attempt.startedAt = new Date(); attempt.lastTick = attempt.startedAt;
             try { attempt = mongo.insert(attempt); }
             catch (DuplicateKeyException concurrentStart) {
-                attempt = current(user.getId(), type, flow, part);
-                if (attempt == null) throw new ClientErrorException("Please retry Begin", 409);
+                attempt = mongo.findOne(Query.query(Criteria.where("userId").is(user.getId()).and("beginKey").is(beginKey)), AssessmentAttempt.class);
+                if (attempt == null || !Objects.equals(attempt.session, session)) throw new ClientErrorException("Please retry Begin", 409);
             }
         }
         return change(user.getId(), attempt.id, a -> {
-            if (a.completed) return;
-            tick(a, System.currentTimeMillis());
+            if (a.completed || a.abandoned) return;
+            long now = System.currentTimeMillis();
+            if (a.lastTick == null || now - a.lastTick.getTime() > LEASE_MS) { abandon(a, now); return; }
+            tick(a, now);
             a.session = session;
             a.lastTick = new Date();
         });
@@ -177,7 +192,7 @@ public class AssessmentService {
 
     public AssessmentAttempt update(String userId, String id, String session, int position, String action, String answer) {
         requireKey(session);
-        if (action == null || !Set.of("answer", "heartbeat", "pause").contains(action)) throw new BadRequestException("Invalid action");
+        if (action == null || !Set.of("answer", "heartbeat", "pause", "end").contains(action)) throw new BadRequestException("Invalid action");
         if (position < 0) throw new BadRequestException("Invalid question position");
         if ("answer".equals(action) && (answer == null || !answer.matches("[0-9]{1,10}")))
             throw new BadRequestException("Enter a numeric answer (up to 10 digits)");
@@ -187,13 +202,14 @@ public class AssessmentService {
     }
 
     static void applyUpdate(AssessmentAttempt a, String session, int position, String action, String answer, long now) {
-        if (a.completed) return;
-        if (!Objects.equals(a.session, session)) throw new ClientErrorException("Test opened in another tab. Resume here to continue.", 409);
+        if (a.completed || a.abandoned) return;
+        if (!Objects.equals(a.session, session)) throw new ClientErrorException("This test session has ended. Start a new test.", 409);
+        if ("end".equals(action) || "pause".equals(action)) { abandon(a, now); return; }
+        if (a.lastTick != null && now - a.lastTick.getTime() > LEASE_MS) { abandon(a, now); return; }
         // A retry of an accepted answer must not answer the next question or count its time twice.
         if (position < a.position) return;
-        if (position != a.position) throw new ClientErrorException("Question changed. Resume the test.", 409);
+        if (position != a.position) throw new ClientErrorException("Question changed. Retry the request.", 409);
         tick(a, now);
-        if ("pause".equals(action)) { a.lastTick = null; return; }
         if ("heartbeat".equals(action)) { a.lastTick = new Date(now); return; }
         Item item = a.items.get(a.position);
         boolean correct = Long.parseLong(answer) == item.result(a.type);
@@ -204,10 +220,24 @@ public class AssessmentService {
         a.position++;
         a.completed = a.position == a.items.size();
         if (a.completed) {
-            a.completedAt = new Date(now); a.lastTick = null;
+            a.completedAt = new Date(now); a.endedAt = a.completedAt; a.active = false; a.lastTick = null;
             if (a.programBatch != null)
                 a.programPassed = a.correctCount == a.items.size() && a.totalMs < 3000L * a.items.size();
         }
+    }
+
+    static void abandon(AssessmentAttempt a, long now) {
+        if (a.completed || a.abandoned) return;
+        tick(a, now);
+        a.abandoned = true; a.active = false; a.endedAt = new Date(now); a.lastTick = null;
+    }
+    // A closed browser may never deliver its final request. Preserve it as unfinished, never as a failed batch.
+    private void expireStale() {
+        var stale = Query.query(Criteria.where("completed").is(false).and("abandoned").ne(true)
+            .orOperator(Criteria.where("lastTick").lt(new Date(System.currentTimeMillis()-LEASE_MS)),
+                Criteria.where("lastTick").is(null)));
+        mongo.updateMulti(stale, new org.springframework.data.mongodb.core.query.Update()
+            .set("abandoned", true).set("active", false).set("endedAt", new Date()).unset("lastTick").inc("version", 1), AssessmentAttempt.class);
     }
 
     static void tick(AssessmentAttempt a, long now) {
@@ -234,30 +264,31 @@ public class AssessmentService {
         if (key == null || !key.matches("[A-Za-z0-9-]{1,80}")) throw new BadRequestException("Invalid request identifier");
     }
 
-    public record StudentState(String id, String type, boolean completed, int position, int count, String problem, String nextProblem, Integer part, Integer partBatch) {}
+    public record StudentState(String id, String type, boolean completed, int position, int count, String problem, String nextProblem, Integer part, Integer partBatch, boolean abandoned) {}
     public static StudentState student(AssessmentAttempt a) {
         return a == null ? null : new StudentState(a.id, a.type, a.completed, a.position, a.items.size(),
-            a.completed ? null : a.items.get(a.position).problem(a.type),
-            !a.completed && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem(a.type) : null,
-            a.legacyPart != null ? a.legacyPart : a.programPart, a.programPartBatch);
+            (a.completed || a.abandoned) ? null : a.items.get(a.position).problem(a.type),
+            !a.completed && !a.abandoned && a.position + 1 < a.items.size() ? a.items.get(a.position + 1).problem(a.type) : null,
+            a.legacyPart != null ? a.legacyPart : a.programPart, a.programPartBatch, a.abandoned);
     }
 
     public Query reportQuery(String pin, String type, String from, String to) {
-        Criteria criteria = Criteria.where("completed").is(true);
+        Criteria criteria = new Criteria();
         if (pin != null && !pin.isBlank()) criteria.and("studentPin").is(pin.trim());
         if (type != null && !type.isBlank()) criteria.and("type").is(type);
         if ((from != null && !from.isBlank()) || (to != null && !to.isBlank())) {
-            Criteria date = criteria.and("completedAt");
+            Criteria date = criteria.and("startedAt");
             try {
                 if (from != null && !from.isBlank()) date.gte(Date.from(Instant.parse(from)));
                 if (to != null && !to.isBlank()) date.lt(Date.from(Instant.parse(to)));
             } catch (RuntimeException invalid) { throw new BadRequestException("Invalid date range"); }
         }
-        return Query.query(criteria).with(Sort.by(Sort.Direction.DESC, "completedAt", "_id"));
+        return Query.query(criteria).with(Sort.by(Sort.Direction.DESC, "startedAt", "_id"));
     }
 
     public List<AssessmentAttempt> reports(Query query, int page) {
+        expireStale();
         return mongo.find(query.skip((long) Math.max(0, page) * 25).limit(25), AssessmentAttempt.class);
     }
-    public Stream<AssessmentAttempt> export(Query query) { return mongo.stream(query, AssessmentAttempt.class); }
+    public Stream<AssessmentAttempt> export(Query query) { expireStale(); return mongo.stream(query, AssessmentAttempt.class); }
 }

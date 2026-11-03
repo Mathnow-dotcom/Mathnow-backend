@@ -30,7 +30,7 @@ public class AssessmentAdminResource {
         return value == null ? "" : CSV_TIMESTAMP.format(value.toInstant());
     }
     static double averageTimeMs(AssessmentAttempt attempt) {
-        return attempt.items.isEmpty() ? 0 : (double) attempt.totalMs / attempt.items.size();
+        return attempt.answers.isEmpty() ? 0 : (double) attempt.totalMs / attempt.answers.size();
     }
 
     static double correctUnderTwoSecondsPercent(AssessmentAttempt attempt) {
@@ -61,9 +61,12 @@ public class AssessmentAdminResource {
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("id", a.id); row.put("student", a.studentName); row.put("pin", a.studentPin);
             row.put("type", a.type); row.put("startedAt", a.startedAt); row.put("completedAt", a.completedAt);
+            row.put("status", a.completed ? "Completed" : a.abandoned ? "Ended unfinished" : "In progress");
+            row.put("endedAt", a.endedAt); row.put("answered", a.answers.size());
             row.put("correct", a.correctCount); row.put("count", a.items.size());
-            row.put("percent", 100.0 * a.correctCount / a.items.size());
-            row.put("totalMs", a.totalMs); row.put("answers", a.answers);
+            row.put("percent", a.items.isEmpty() ? 0 : 100.0 * a.correctCount / a.items.size());
+            row.put("totalMs", a.totalMs + a.questionMs); row.put("answers", a.answers);
+            row.put("items", a.items.stream().map(item -> item.problem(a.type)).toList());
             row.put("averageTimeMs", averageTimeMs(a));
             row.put("correctUnderTwoSecondsPercent", correctUnderTwoSecondsPercent(a));
             row.put("correctUnderThreeSecondsPercent", correctUnderSecondsPercent(a, 3000));
@@ -84,7 +87,7 @@ public class AssessmentAdminResource {
         var query = tests.reportQuery(student, type, from, to);
         StreamingOutput output = stream -> {
             var writer = new BufferedWriter(new OutputStreamWriter(stream, StandardCharsets.UTF_8));
-            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent,Correct under 3 seconds percent,Answered at America/Los_Angeles,Batch,Passed,Addition part,Part batch,Test flow\r\n");
+            writer.write("Attempt,Student,PIN,Test,Started America/Los_Angeles,Completed America/Los_Angeles,Correct,Items,Percent,Total ms,Item,Problem,Answer,Correct item,Time ms,Average time per item seconds,Correct under 2 seconds percent,Correct under 3 seconds percent,Answered at America/Los_Angeles,Batch,Passed,Addition part,Part batch,Test flow,Status,Answered items,Ended America/Los_Angeles\r\n");
             try (var attempts = tests.export(query)) {
                 var iterator = attempts.iterator();
                 while (iterator.hasNext()) {
@@ -92,14 +95,15 @@ public class AssessmentAdminResource {
                     double averageSeconds = averageTimeMs(a) / 1000;
                     double fastCorrectPercent = correctUnderTwoSecondsPercent(a);
                     double underThreePercent = correctUnderSecondsPercent(a, 3000);
-                    for (int i = 0; i < a.answers.size(); i++) {
-                        var answer = a.answers.get(i);
+                    for (int i = 0; i < Math.max(1, a.items.size()); i++) {
+                        var answer = i < a.answers.size() ? a.answers.get(i) : null;
                         Object[] values = {a.id, a.studentName, a.studentPin, a.type, csvTimestamp(a.startedAt), csvTimestamp(a.completedAt),
-                            a.correctCount, a.items.size(), 100.0 * a.correctCount / a.items.size(), a.totalMs,
-                            i + 1, answer.problem(), answer.answer(), answer.correct(), answer.timeMs(),
-                            averageSeconds, fastCorrectPercent, underThreePercent, csvTimestamp(answer.answeredAt()),
+                            a.correctCount, a.items.size(), a.items.isEmpty() ? 0 : 100.0 * a.correctCount / a.items.size(), a.totalMs + a.questionMs,
+                            i + 1, i < a.items.size() ? a.items.get(i).problem(a.type) : "", answer == null ? "" : answer.answer(), answer == null ? "" : answer.correct(), answer == null ? "" : answer.timeMs(),
+                            averageSeconds, fastCorrectPercent, underThreePercent, answer == null ? "" : csvTimestamp(answer.answeredAt()),
                             a.programBatch, a.programPassed, a.legacyPart != null ? a.legacyPart : a.programPart, a.programPartBatch,
-                            a.programBatch == null ? "Legacy test" : "Learning assessment"};
+                            a.programBatch == null ? "HIGH STAKES TEST" : "Learning assessment",
+                            a.completed ? "Completed" : a.abandoned ? "Ended unfinished" : "In progress", a.answers.size(), csvTimestamp(a.endedAt)};
                         for (int j = 0; j < values.length; j++) {
                             if (j > 0) writer.write(',');
                             writer.write(csv(values[j]));

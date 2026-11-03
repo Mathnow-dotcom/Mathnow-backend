@@ -26,13 +26,13 @@ public class CorrectionLoopService {
     }
     public String pendingRun(String userId) {
         QuizRun run = mongo.findOne(org.springframework.data.mongodb.core.query.Query.query(
-            Criteria.where("userId").is(userId).and("correctionLoop.phase").in("answer","practice","passed")), QuizRun.class);
+            Criteria.where("userId").is(userId).and("correctionLoop.phase").in("answer","retry","practice","passed")), QuizRun.class);
         return run == null ? null : run.getId();
     }
     public QuizRun pendingRun(String userId, String operation, int level, String belt) {
         return mongo.findOne(org.springframework.data.mongodb.core.query.Query.query(
             Criteria.where("userId").is(userId).and("operation").is(operation).and("level").is(level)
-                .and("correctionLoop.phase").in("answer","practice","passed")
+                .and("correctionLoop.phase").in("answer","retry","practice","passed")
                 .orOperator(Criteria.where("pretestMode").is(true), Criteria.where("beltOrDegree").is(belt))), QuizRun.class);
     }
     public Object intercept(QuizRun run, Object response) {
@@ -96,13 +96,13 @@ public class CorrectionLoopService {
     static void add(Map<String,GeneratedQuestion> pool, GeneratedQuestion q) {
         pool.putIfAbsent(q.getOperation()+":"+q.getParams().getA()+":"+q.getParams().getB(), q);
     }
-    public record State(String id, long revision, String phase, GeneratedQuestion question, int position, long elapsedMs, long limitMs) {}
+    public record State(String id, long revision, String phase, GeneratedQuestion question, int position, long elapsedMs, long limitMs, long inactivityMs) {}
     public State state(QuizRun run) {
         ensureRocketFormat(run);
         var c = run.correctionLoop;
         if (c == null) throw new BadRequestException("No correction is pending");
         int index = "practice".equals(c.phase) ? c.order.get(c.position) : c.shown;
-        return new State(c.id,c.revision,c.phase,c.facts.get(index),c.position,c.elapsedMs,c.limitMs);
+        return new State(c.id,c.revision,c.phase,c.facts.get(index),c.position,c.elapsedMs,c.limitMs, run.isPretestMode() ? config.getPretestInactivityThresholdMs() : config.getInactivityThresholdMs());
     }
     public State act(QuizRun run, String id, long revision, String action, Integer answer, long responseMs) {
         synchronized (run) {
@@ -117,17 +117,28 @@ public class CorrectionLoopService {
             return state(run);
         }
     }
+    private static void startRound(QuizRun.CorrectionLoop c) {
+        c.order = new ArrayList<>(List.of(0,1,2)); Collections.shuffle(c.order);
+        c.position=0; c.elapsedMs=0; c.phase="practice";
+    }
     static void apply(QuizRun.CorrectionLoop c, String action, Integer answer, long ms) {
         if ("next".equals(action) && "answer".equals(c.phase)) {
-            c.order = new ArrayList<>(List.of(0,1,2)); Collections.shuffle(c.order);
-            c.position=0; c.elapsedMs=0; c.phase="practice";
+            c.phase="retry"; // Reproduce this same fact before entering a fresh round.
+        } else if (action != null && Set.of("answer","timeout","pause").contains(action) && "retry".equals(c.phase)) {
+            if ("pause".equals(action)) return;
+            if ("answer".equals(action) && Objects.equals(answer,c.facts.get(c.shown).getCorrectAnswer())) startRound(c);
+            else c.phase="answer";
         } else if (action != null && Set.of("answer","timeout","pause").contains(action) && "practice".equals(c.phase)) {
+            // Saturate at failure: the round limit never interrupts an unfinished round.
             c.elapsedMs = Math.min(c.limitMs + 1, c.elapsedMs + Math.min(ms,c.limitMs + 1));
             c.shown = c.order.get(c.position);
-            if ("pause".equals(action) && c.elapsedMs <= c.limitMs) return;
-            if (!"answer".equals(action) || !Objects.equals(answer,c.facts.get(c.shown).getCorrectAnswer()) || c.elapsedMs > c.limitMs) {
+            if ("pause".equals(action)) return;
+            if (!"answer".equals(action) || !Objects.equals(answer,c.facts.get(c.shown).getCorrectAnswer())) {
                 c.phase="answer"; c.position=0;
-            } else if (++c.position == 3) c.phase="passed";
+            } else if (++c.position == 3) {
+                if (c.elapsedMs <= c.limitMs) c.phase="passed";
+                else startRound(c);
+            }
         } else throw new BadRequestException("Invalid correction action");
     }
 }

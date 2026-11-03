@@ -4,6 +4,34 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class AssessmentResourceTest {
+    @Test void unfinishedAttemptsIncludeUnansweredItemsInReportAndCsv() throws Exception {
+        var service = org.mockito.Mockito.mock(com.infinityisland.service.AssessmentService.class);
+        var config = org.mockito.Mockito.mock(com.infinityisland.service.GameConfigService.class);
+        org.mockito.Mockito.when(config.isValidAdminPin("admin")).thenReturn(true);
+        var resource = new AssessmentAdminResource(service, config);
+        var a = new com.infinityisland.dao.AssessmentAttempt();
+        a.id = "ended"; a.abandoned = true; a.totalMs = 1200;
+        a.items.add(new com.infinityisland.dao.AssessmentAttempt.Item(1, 1));
+        a.items.add(new com.infinityisland.dao.AssessmentAttempt.Item(2, 2));
+        a.answers.add(new com.infinityisland.dao.AssessmentAttempt.Answer("1 + 1", "2", true, 1200));
+        org.mockito.Mockito.when(service.reports(null, 0)).thenReturn(java.util.List.of(a));
+        var row = resource.reports("admin", null, null, null, null, 0).get(0);
+        assertEquals("Ended unfinished", row.get("status"));
+        assertEquals(1, row.get("answered"));
+        assertEquals(java.util.List.of("1 + 1", "2 + 2"), row.get("items"));
+        assertEquals(1200.0, row.get("averageTimeMs"));
+        org.mockito.Mockito.when(service.export(null)).thenAnswer(i -> java.util.stream.Stream.of(a));
+        var stream = new java.io.ByteArrayOutputStream();
+        ((jakarta.ws.rs.core.StreamingOutput) resource.export("admin", null, null, null, null).getEntity()).write(stream);
+        var csv = stream.toString(java.nio.charset.StandardCharsets.UTF_8);
+        org.junit.jupiter.api.Assertions.assertTrue(csv.contains("HIGH STAKES TEST"));
+        org.junit.jupiter.api.Assertions.assertTrue(csv.contains("\"2 + 2\",\"\",\"\",\"\""));
+        assertEquals(3, csv.lines().count());
+        a.answers.clear(); a.totalMs = 0;
+        stream.reset();
+        ((jakarta.ws.rs.core.StreamingOutput) resource.export("admin", null, null, null, null).getEntity()).write(stream);
+        assertEquals(3, stream.toString(java.nio.charset.StandardCharsets.UTF_8).lines().count());
+    }
     @Test void threeSecondMetricExcludesBoundaryAndIncorrectAnswers() {
         var a = new com.infinityisland.dao.AssessmentAttempt();
         for (int i = 0; i < 4; i++) a.items.add(new com.infinityisland.dao.AssessmentAttempt.Item(i, 1));
