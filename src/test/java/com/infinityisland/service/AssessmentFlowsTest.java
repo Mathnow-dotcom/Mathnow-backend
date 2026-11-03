@@ -69,6 +69,39 @@ class AssessmentFlowsTest {
         assertThrows(jakarta.ws.rs.ClientErrorException.class,()->service.start(user,"new-key","different-session","A","legacy"));
         verifyNoInteractions(program);
     }
+    @Test void dailyLimitIncludesUnfinishedAttemptsButAllowsIdempotentRetry() {
+        when(mongo.find(any(Query.class),eq(Catalog.class))).thenReturn(List.of(catalog()));
+        var first = service.start(user,"daily-key","session","A","legacy",1);
+        assertEquals(AssessmentService.testDay(first.startedAt.toInstant()), first.highStakesDay);
+        when(mongo.exists(any(Query.class),eq(AssessmentAttempt.class))).thenReturn(true);
+        assertSame(first,service.start(user,"daily-key","session","A","legacy",1));
+        var limit = assertThrows(jakarta.ws.rs.ClientErrorException.class,
+            () -> service.start(user,"second-key","other-session","A","legacy",1));
+        assertEquals(409, limit.getResponse().getStatus());
+        assertEquals("Try again tomorrow (Los Angeles time).",
+            ((Map<?, ?>) limit.getResponse().getEntity()).get("error"));
+        assertEquals("application/json", limit.getResponse().getMediaType().toString());
+        assertFalse(first.abandoned, "Rejected second Start must not end the existing session");
+        service.update(user.getId(),first.id,"session",0,"end",null);
+        assertThrows(jakarta.ws.rs.ClientErrorException.class,
+            () -> service.start(user,"third-key","third-session","A","legacy",1));
+        assertEquals(1,stored.size());
+    }
+    @Test void dailyScopeSeparatesPartsSubjectsAndUsesLosAngelesMidnight() {
+        var now=java.time.Instant.parse("2026-11-03T07:59:59Z");
+        assertEquals("2026-11-02",AssessmentService.testDay(now));
+        assertEquals("2026-11-03",AssessmentService.testDay(now.plusSeconds(1)));
+        var one=AssessmentService.dailyAttemptQuery("student","A",1,now).getQueryObject();
+        var two=AssessmentService.dailyAttemptQuery("student","A",2,now).getQueryObject();
+        assertEquals(1,one.get("legacyPart"));assertEquals(2,two.get("legacyPart"));
+        assertEquals("C",AssessmentService.dailyAttemptQuery("student","C",null,now).getQueryObject().get("type"));
+        assertTrue(one.containsKey("programBatch"));assertNull(one.get("programBatch"));
+        // DST transition days are calendar days, not fixed 24-hour windows.
+        for (var entry: java.util.Map.of("2026-03-08T12:00:00Z",23L,"2026-11-01T12:00:00Z",25L).entrySet()) {
+            var range=(Document)AssessmentService.dailyAttemptQuery("student","A",1,java.time.Instant.parse(entry.getKey())).getQueryObject().get("startedAt");
+            assertEquals(entry.getValue().longValue(),(((Date)range.get("$lt")).getTime()-((Date)range.get("$gte")).getTime())/3600000);
+        }
+    }
     Catalog catalog() {
         var c=new Catalog();c.setOperation("add");var f=new Catalog.Fact();f.setA(1);f.setB(1);c.setFacts(List.of(f));return c;
     }

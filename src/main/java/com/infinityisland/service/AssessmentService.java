@@ -31,6 +31,23 @@ public class AssessmentService {
     @org.springframework.beans.factory.annotation.Autowired private ProgramService program;
     public AssessmentService(MongoTemplate mongo) { this.mongo = mongo; }
 
+    static final java.time.ZoneId TEST_ZONE = java.time.ZoneId.of("America/Los_Angeles");
+    static String testDay(java.time.Instant instant) { return instant.atZone(TEST_ZONE).toLocalDate().toString(); }
+    static Query dailyAttemptQuery(String userId, String type, Integer part, java.time.Instant now) {
+        var day = now.atZone(TEST_ZONE).toLocalDate();
+        return Query.query(Criteria.where("userId").is(userId).and("type").is(type)
+            .and("programBatch").is(null).and("legacyPart").is(part)
+            .and("startedAt").gte(Date.from(day.atStartOfDay(TEST_ZONE).toInstant()))
+            .lt(Date.from(day.plusDays(1).atStartOfDay(TEST_ZONE).toInstant())));
+    }
+    private void checkDailyAttempt(String userId, String type, Integer part, java.time.Instant now) {
+        if (mongo.exists(dailyAttemptQuery(userId, type, part, now), AssessmentAttempt.class))
+            throw new ClientErrorException(jakarta.ws.rs.core.Response.status(409)
+                .type(jakarta.ws.rs.core.MediaType.APPLICATION_JSON)
+                .entity(Map.of("error", "Try again tomorrow.",
+                    "code", "HIGH_STAKES_DAILY_LIMIT")).build());
+    }
+
     @PostConstruct
     public void indexes() {
         // Idempotently classify unfinished records only; historical results stay untouched.
@@ -60,6 +77,12 @@ public class AssessmentService {
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
             .on("userId", Sort.Direction.ASC).on("beginKey", Sort.Direction.ASC).unique());
         mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index().on("completedAt", Sort.Direction.DESC));
+        mongo.indexOps(AssessmentAttempt.class).ensureIndex(new Index()
+            .on("userId", Sort.Direction.ASC).on("type", Sort.Direction.ASC)
+            .on("legacyPart", Sort.Direction.ASC).on("highStakesDay", Sort.Direction.ASC)
+            .named("one_high_stakes_test_per_day").unique()
+            .partial(PartialIndexFilter.of(Criteria.where("highStakesDay").exists(true))));
+
 
     }
 
@@ -145,6 +168,8 @@ public class AssessmentService {
         if (attempt != null && !Objects.equals(part, attempt.legacyPart)) throw new BadRequestException("Request identifier belongs to another test part");
         if (attempt != null && !Objects.equals(attempt.session, session))
             throw new ClientErrorException("This test session has ended. Start a new test.", 409);
+        if (attempt == null && "legacy".equals(flow))
+            checkDailyAttempt(user.getId(), type, part, java.time.Instant.now());
         if (attempt == null) {
             var previous = current(user.getId(), type, flow, part);
             if (previous != null) change(user.getId(), previous.id, a -> abandon(a, System.currentTimeMillis()));
@@ -174,10 +199,17 @@ public class AssessmentService {
             Collections.shuffle(attempt.items);
             attempt.userId = user.getId(); attempt.studentName = user.getName(); attempt.studentPin = user.getPin();
             attempt.beginKey = beginKey; attempt.startedAt = new Date(); attempt.lastTick = attempt.startedAt;
+            if ("legacy".equals(flow)) {
+                // Recheck at insertion time in case pool generation crossed midnight.
+                checkDailyAttempt(user.getId(), type, part, attempt.startedAt.toInstant());
+                attempt.highStakesDay = testDay(attempt.startedAt.toInstant());
+            }
             try { attempt = mongo.insert(attempt); }
             catch (DuplicateKeyException concurrentStart) {
                 attempt = mongo.findOne(Query.query(Criteria.where("userId").is(user.getId()).and("beginKey").is(beginKey)), AssessmentAttempt.class);
-                if (attempt == null || !Objects.equals(attempt.session, session)) throw new ClientErrorException("Please retry Begin", 409);
+                if (attempt == null && "legacy".equals(flow))
+                    checkDailyAttempt(user.getId(), type, part, java.time.Instant.now());
+                if (attempt == null || !Objects.equals(attempt.session, session)) throw new ClientErrorException("Please retry Start", 409);
             }
         }
         return change(user.getId(), attempt.id, a -> {

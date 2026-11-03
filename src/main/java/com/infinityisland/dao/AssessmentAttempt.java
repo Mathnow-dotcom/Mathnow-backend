@@ -16,6 +16,7 @@ public class AssessmentAttempt {
     public Date endedAt;
     // Active-attempt namespace. Historical records are classified by programBatch.
     public String flow;
+    public String highStakesDay; // America/Los_Angeles date; absent on learning assessments.
     public Date startedAt, completedAt, lastTick;
     public int position, correctCount;
     public long totalMs, questionMs;
