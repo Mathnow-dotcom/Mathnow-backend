@@ -47,16 +47,9 @@ public class UserService {
         this.gameConfig = gameConfig;
     }
 
-    public User createUser(String name, String pin) {
+    public User createUser(String name, String pin, String school, String grade) {
         User existing = cachedUsers.findByPin(pin).orElse(null);
-        if (existing != null) {
-            if (name != null && !name.isBlank()) {
-                existing.setName(name);
-                existing.setDisplayName(name);
-                cachedUsers.save(existing);
-            }
-            return existing;
-        }
+        if (existing != null) return existing;
 
         User u = new User();
         u.setIntegratedEnrollment(true);
@@ -67,6 +60,8 @@ public class UserService {
         } else {
             u.setDisplayName("PIN " + pin);
         }
+        u.setSchool(school);
+        u.setGrade(grade);
 
         u.setProgress(baselineProgress());
         return cachedUsers.save(u);

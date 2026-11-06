@@ -162,13 +162,14 @@ public final class QuizUtils {
     }
 
     public static String formatFractionAnswer(int scaledAnswer) {
-        // The supplied Fraction curriculum specifies one-third as 0.33.
+        // The supplied Fraction To Decimal curriculum specifies one-third as .33.
         // Keep this learner-facing representation while retaining the precise
         // scaled value internally for answer validation and persistence.
-        if (scaledAnswer == 333) return "0.33";
+        if (scaledAnswer == 333) return ".33";
         java.math.BigDecimal value = java.math.BigDecimal.valueOf(scaledAnswer, 3)
                 .stripTrailingZeros();
-        return value.scale() < 0 ? value.setScale(0).toPlainString() : value.toPlainString();
+        String label = value.scale() < 0 ? value.setScale(0).toPlainString() : value.toPlainString();
+        return label.startsWith("0.") ? label.substring(1) : label;
     }
 
     private static List<Integer> buildFractionChoices(int correct) {

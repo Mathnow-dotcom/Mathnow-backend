@@ -83,7 +83,7 @@ cleanup_user() {
 reset_user() {
   post_json "/user/reset" '{}' >/dev/null
   sleep 0.3
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 }
 
 complete_quiz() {
@@ -164,7 +164,7 @@ test_new_user_progress_format() {
   say "TEST 1: New User Progress Format (per-operation)"
   cleanup_user
 
-  local resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}")
+  local resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}")
   jq -e '.token and .user._id' >/dev/null <<<"$resp" && ok "Login successful" || bad "Login failed"
 
   # Check per-operation progress format

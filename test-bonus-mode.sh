@@ -69,7 +69,7 @@ delete_json() {
 reset_user() {
   delete_json "/user/delete" "$PIN" >/dev/null 2>&1
   sleep 0.1
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" "" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" "" >/dev/null
 }
 
 # Skip pretest using forcePass + skipLevelAward (reused from test-rocket-mode.sh)

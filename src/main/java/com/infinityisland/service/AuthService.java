@@ -7,7 +7,6 @@ import com.infinityisland.util.ProgressDefaults;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import com.infinityisland.util.DateUtil;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -15,6 +14,8 @@ import java.util.*;
 @Service
 public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
+    private static final List<String> SCHOOLS = List.of("School A", "School B", "School C");
+    private static final Set<String> GRADES = Set.of("K", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12");
     private final CachedUserService cachedUsers;
     private final UserService userService;
     private final DailyService dailyService;
@@ -30,11 +31,24 @@ public class AuthService {
 
     public record LoginResult(UserPayload user, String token) {}
 
+    public static class ProfileMismatchException extends RuntimeException {
+        private final String code;
+
+        public ProfileMismatchException(String message, String code) {
+            super(message);
+            this.code = code;
+        }
+
+        public String getCode() { return code; }
+    }
+
     public static class UserPayload {
         public String _id;
         public String pin;
         public String name;
         public String displayName;
+        public String school;
+        public String grade;
         public String theme;
         public Map<String, Object> progress;
         public Map<String, Object> dailyStats;
@@ -58,7 +72,7 @@ public class AuthService {
     }
 
     // In loginPin() method - REPLACE the existing user handling section:
-    public LoginResult loginPin(String name, String pin) {
+    public LoginResult loginPin(String name, String pin, String school, String grade) {
         try {
             if (pin == null || pin.isBlank()) {
                 throw new IllegalArgumentException("PIN required");
@@ -66,18 +80,15 @@ public class AuthService {
             if (name == null || name.isBlank()) {
                 throw new IllegalArgumentException("Name required");
             }
+            String canonicalSchool = canonicalSchool(school);
+            String canonicalGrade = canonicalGrade(grade);
 
             Optional<User> existingByPin = cachedUsers.findByPin(pin);
             User user;
 
             if (existingByPin.isPresent()) {
                 user = existingByPin.get();
-
-                if (!user.getName().equalsIgnoreCase(name)) {
-                    throw new DuplicateKeyException(
-                            "Pin already exists, please enter correct name."
-                    );
-                }
+                validateAndBindProfile(user, name, canonicalSchool, canonicalGrade);
 
                 // FIX: Ensure existing user has mutable progress maps
                 Map<String, Object> currentProgress = user.getProgress();
@@ -107,11 +118,15 @@ public class AuthService {
                 }
 
             } else {
-                user = userService.createUser(name, pin);
+                user = userService.createUser(name.trim(), pin, canonicalSchool, canonicalGrade);
 
                 if (user == null) {
                     throw new IllegalStateException("Failed to create user");
                 }
+
+                // Handles a concurrent first login where another request created
+                // the PIN between the initial lookup and createUser().
+                validateAndBindProfile(user, name, canonicalSchool, canonicalGrade);
 
                 // Ensure new user has proper mutable progress
                 if (user.getProgress() == null) {
@@ -153,6 +168,8 @@ public class AuthService {
             payload.pin = user.getPin();
             payload.name = user.getName();
             payload.displayName = user.getDisplayName() != null ? user.getDisplayName() : user.getName();
+            payload.school = user.getSchool();
+            payload.grade = user.getGrade();
             payload.theme = user.getTheme() != null ? user.getTheme() : "";
             payload.progress = user.getProgress();
             payload.currentStreak = newStreak;
@@ -178,6 +195,49 @@ public class AuthService {
             log.error("Login failed for pin", e);
             throw e;
         }
+    }
+
+    private String canonicalSchool(String school) {
+        if (school == null || school.isBlank()) throw new IllegalArgumentException("School required");
+        String value = school.trim();
+        return SCHOOLS.stream()
+                .filter(candidate -> candidate.equalsIgnoreCase(value))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Invalid school"));
+    }
+
+    private String canonicalGrade(String grade) {
+        if (grade == null || grade.isBlank()) throw new IllegalArgumentException("Grade required");
+        String value = grade.trim().toUpperCase(Locale.ROOT);
+        if (!GRADES.contains(value)) throw new IllegalArgumentException("Invalid grade");
+        return value;
+    }
+
+    private void validateAndBindProfile(User user, String name, String school, String grade) {
+        if (user.getName() == null || !user.getName().equalsIgnoreCase(name.trim())) {
+            throw new ProfileMismatchException(
+                    "Name does not match this passcode.", "INCORRECT_NAME"
+            );
+        }
+
+        boolean hasSchool = user.getSchool() != null && !user.getSchool().isBlank();
+        boolean hasGrade = user.getGrade() != null && !user.getGrade().isBlank();
+
+        if (hasSchool && !user.getSchool().equalsIgnoreCase(school)) {
+            throw new ProfileMismatchException(
+                    "School does not match this passcode.", "INCORRECT_SCHOOL"
+            );
+        }
+        if (hasGrade && !user.getGrade().equalsIgnoreCase(grade)) {
+            throw new ProfileMismatchException(
+                    "Grade does not match this passcode.", "INCORRECT_GRADE"
+            );
+        }
+
+        // Backward-compatible, one-time binding for legacy users. Validation is
+        // completed first so a failed attempt cannot partially mutate the cache.
+        if (!hasSchool) user.setSchool(school);
+        if (!hasGrade) user.setGrade(grade);
     }
 
     // Add this helper method to deep copy progress with mutable maps

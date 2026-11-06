@@ -78,8 +78,10 @@ class AssessmentFlowsTest {
         var limit = assertThrows(jakarta.ws.rs.ClientErrorException.class,
             () -> service.start(user,"second-key","other-session","A","legacy",1));
         assertEquals(409, limit.getResponse().getStatus());
-        assertEquals("Try again tomorrow (Los Angeles time).",
+        assertEquals("Try again tomorrow.",
             ((Map<?, ?>) limit.getResponse().getEntity()).get("error"));
+        assertEquals("HIGH_STAKES_DAILY_LIMIT",
+            ((Map<?, ?>) limit.getResponse().getEntity()).get("code"));
         assertEquals("application/json", limit.getResponse().getMediaType().toString());
         assertFalse(first.abandoned, "Rejected second Start must not end the existing session");
         service.update(user.getId(),first.id,"session",0,"end",null);

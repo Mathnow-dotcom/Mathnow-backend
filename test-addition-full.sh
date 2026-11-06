@@ -161,7 +161,7 @@ handle_pretest_if_triggered() {
 reset_user() {
   post_json "/user/reset" '{}' >/dev/null
   sleep 0.3
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
   # Skip all pretests for level 1 so tests can proceed normally
   skip_all_pretests 1
 }
@@ -170,7 +170,7 @@ reset_user() {
 reset_user_with_pretests() {
   post_json "/user/reset" '{}' >/dev/null
   sleep 0.3
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 }
 
 rand_between() {
@@ -306,18 +306,18 @@ test_auth() {
 
   cleanup_user
 
-  local resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}")
+  local resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}")
   jq -e '.token and .user._id' >/dev/null <<<"$resp" && ok "Valid login" || bad "Login failed"
   jq -e '.user.progress.add.L1' >/dev/null <<<"$resp" && ok "Progress in response" || bad "Progress missing"
   jq -e '.user.dailyStats' >/dev/null <<<"$resp" && ok "DailyStats in response" || bad "DailyStats missing"
 
-  resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\"}")
+  resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"school\":\"School A\",\"grade\":\"K\"}")
   jq -e '.error' >/dev/null <<<"$resp" && ok "Rejects missing name" || bad "Should error"
 
-  resp=$(post_json "/auth/login-pin" "{\"name\":\"$NAME\"}")
+  resp=$(post_json "/auth/login-pin" "{\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}")
   jq -e '.error' >/dev/null <<<"$resp" && ok "Rejects missing PIN" || bad "Should error"
 
-  resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"WrongName\"}")
+  resp=$(post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"WrongName\",\"school\":\"School A\",\"grade\":\"K\"}")
   jq -e '.error' >/dev/null <<<"$resp" && ok "Rejects wrong name" || bad "Should reject wrong name"
 }
 
@@ -1295,7 +1295,7 @@ test_resume_normal_partial() {
   done
 
   sleep 0.5
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 
   local prep2=$(post_json "/quiz/prepare" '{"level":1,"beltOrDegree":"white","operation":"add"}')
 
@@ -1322,7 +1322,7 @@ test_resume_gamemode_across_sessions() {
   done
 
   sleep 0.5
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 
   local prep2=$(post_json "/quiz/prepare" '{"level":1,"beltOrDegree":"green","operation":"add","gameMode":false}')
 
@@ -1353,7 +1353,7 @@ test_resume_after_wrong() {
   post_json "/quiz/answer" "{\"quizRunId\":\"$runId\",\"questionId\":\"$qid\",\"answer\":$((correct + 99)),\"responseMs\":50}" >/dev/null
 
   sleep 0.5
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 
   local prep2=$(post_json "/quiz/prepare" '{"level":1,"beltOrDegree":"white","operation":"add"}')
   jq -e '.resumed==true' >/dev/null <<<"$prep2" && ok "Resume detected" || bad "Should resume"
@@ -3263,7 +3263,7 @@ test_admin_today_stats_consistency() {
   reset_user
 
   # 1. Login so lastLoginDate is set to today (PST)
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 
   # 2. Do a quiz and answer some questions to generate todayCorrect + todayActiveMs
   local prep=$(post_json "/quiz/prepare" '{"level":1,"beltOrDegree":"white","operation":"add"}')
@@ -3421,7 +3421,7 @@ test_delete_user() {
   say "TEST: Delete User"
 
   local test_pin="9999"
-  post_json "/auth/login-pin" "{\"pin\":\"$test_pin\",\"name\":\"DeleteMe\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$test_pin\",\"name\":\"DeleteMe\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
 
   local resp=$(delete_json "/user/delete" "$test_pin")
   jq -e '.success==true' >/dev/null <<<"$resp" && ok "User deleted" || bad "Delete failed"

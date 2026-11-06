@@ -130,7 +130,7 @@ skip_all_pretests() {
 reset_user() {
   post_json "/user/reset" '{}' >/dev/null
   sleep 0.3
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
   skip_all_pretests 1
 }
 
@@ -1071,7 +1071,7 @@ main() {
   say "═══════════════════════════════════════════════════════════════"
 
   cleanup_user
-  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\"}" >/dev/null
+  post_json "/auth/login-pin" "{\"pin\":\"$PIN\",\"name\":\"$NAME\",\"school\":\"School A\",\"grade\":\"K\"}" >/dev/null
   skip_all_pretests 1
 
   # ─────────────────────────────────────────────────────────────────
